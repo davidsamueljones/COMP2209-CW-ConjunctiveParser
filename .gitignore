@@ -18,3 +18,7 @@ cabal.sandbox.config
 .stack-work/
 cabal.project.local
 .HTF/
+
+# Compiled Alex + Happy files
+Tokens.hs
+Grammar.hs
