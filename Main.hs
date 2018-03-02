@@ -4,6 +4,6 @@ import Tokens
 
 main :: IO ()
 main =   do dat <- readFile "test_files/test.txt"
-            let tokens = alexScanTokens dat
+            let tokens = lexString dat
             --let parse = parseCalc tokens
             print tokens
