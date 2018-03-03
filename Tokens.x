@@ -25,8 +25,8 @@ tokens :-
   <0>    \$                { lexT  TExQual }
   <0>    import            { lexT  TImport }
   <0>    as                { lexT  TAs }
-  <0>    $lower$alphanum*  { lexT' TVar }
-  <0>    $upper+           { lexT' TTable }
+  <0>    $lower$alphanum*  { lexT' TVar } -- TODO: Allow underscores
+  <0>    $upper+           { lexT' TTable } -- TODO: Allow underscores + numbers (but not at start)
   
   -- String handling
   <0>     \"               { beginString  } -- "
