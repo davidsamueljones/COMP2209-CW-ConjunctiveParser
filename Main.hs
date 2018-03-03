@@ -1,9 +1,10 @@
 module Main where
 import Tokens
---import Grammar
+import Grammar
+import Data.Either
 
 main :: IO ()
 main =   do dat <- readFile "test_files/test.txt"
             let tokens = lexString dat
-            --let parse = parseCalc tokens
-            print tokens
+            let parse = parseCalc (head (rights [tokens]))
+            print parse
