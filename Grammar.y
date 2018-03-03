@@ -32,8 +32,10 @@ Import: import string as table ';' Import   {Import $2 $4 $6}
 Query: Args '<-' Exp                    {Query $1 $3}
       
 Args: var ',' Args                      {Multiple $1 $3}
-    | var                               {Single $1}
     |                                   {ArgsEmpty}
+
+Args': ',' Args'                        {Single $2}
+     |                                  {ArgsEmpty}
 
 Exp: Exp '^' Exp                        {Conjunction $1 $3}
    | var '=' var                        {Equality $1 $3}
