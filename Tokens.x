@@ -60,22 +60,21 @@ getMatch :: AlexInput -> Int -> String
 getMatch (_, _, _, s) l =  take l s
 
 -----------------------------------------------------------------
--- State Control
+-- User State Control Functions
 -----------------------------------------------------------------
 -- TODO: Does it matter that EOF errors do not occur when inside quotes? Can fix with SC check at alexScanUser 
 -- but requires massive copying of generated code so not ideal.
+
 -- TODO: Handle multiline comments properly?
 
-
-inital_sc :: Int
-inital_sc = 0;
-
+-- Change the start code to indicate inside a string [No Token]
 beginString :: AlexAction Token
 beginString i l = do
   alexSetStartCode strSC
   setLexerStringValue ""
   skip i l
 
+-- Handle escape characters behaviour [No Token]
 escapeString :: AlexAction Token
 escapeString i l = do
   let s = getMatch i l
@@ -83,18 +82,29 @@ escapeString i l = do
     "\\\"" -> addCharToLexerStringValue '"'
   skip i l
 
+-- Stores a string to the state's string buffer a character at a time [No Token]
 storeString :: AlexAction Token
-storeString i l = do
-  addCharToLexerStringValue (head $ getMatch i l)
-  skip i l
+storeString i l = do 
+  addStringToLexerStringValue $ getMatch i l
+  skip i l 
 
+-- Reset the start code and store the current string buffer to a String Token 
+-- using normal lexing functions (buffer is reversed)
 finishString :: AlexAction Token
 finishString i l = do
-  alexSetStartCode inital_sc
+  alexSetStartCode initialSC
   s <- getLexerStringValue
   lexT (TString $ reverse s) i l
 
+-----------------------------------------------------------------
+-- Generic State Control Functions
+-----------------------------------------------------------------
 
+-- Identifier for initial start code
+initialSC :: Int
+initialSC = 0;
+
+-- Configure the initial user state of the lexer (called by generated code)
 alexInitUserState  :: AlexUserState
 alexInitUserState   = AlexUserState
                     {
@@ -102,33 +112,35 @@ alexInitUserState   = AlexUserState
                       lexerStringValue   = ""
                     }
 
--- FROM WRAPPER SITE (LINKS AT THE BOTTOM) [Currently witchcraft]
--- getLexerStringValue :: Alex String
--- getLexerStringValue = Alex $ \s@AlexState{alex_ust=ust} -> Right (s, lexerStringValue ust)
-
--- setLexerStringValue :: String -> Alex ()
--- setLexerStringValue ss = Alex $ \s -> Right (s{alex_ust=(alex_ust s){lexerStringValue=ss}}, ())
-
--- addCharToLexerStringValue :: Char -> Alex ()
--- addCharToLexerStringValue c = Alex $ \s -> Right (s{alex_ust=(alex_ust s){lexerStringValue=c:lexerStringValue (alex_ust s)}}, ())
-
--- REWRITTEN [No longer witchcraft]
+-- Get the value stored in the lexer state's string buffer
 getLexerStringValue :: Alex String
 getLexerStringValue = do
   ust <- alexGetUserState
   return (lexerStringValue ust)
 
+-- Set the string buffer in the lexer state to the specified value
 setLexerStringValue :: String -> Alex ()
 setLexerStringValue ss = do
   ust <- alexGetUserState
   alexSetUserState ust {lexerStringValue = ss}
 
+--Add a string to the lexer state's string buffer (at front in reverse)
+addStringToLexerStringValue :: String -> Alex () 
+addStringToLexerStringValue [] = noStateChange
+addStringToLexerStringValue (s:ss) = do
+  addCharToLexerStringValue s
+  addStringToLexerStringValue ss
+
+-- Add a single character to the lexer state's string buffer (at front)
 addCharToLexerStringValue :: Char -> Alex ()
 addCharToLexerStringValue c = do
   ust <- alexGetUserState
-  let newString = c:(lexerStringValue ust)
-  alexSetUserState ust {lexerStringValue = newString}
+  let ss = c:(lexerStringValue ust)
+  setLexerStringValue ss
 
+-- Leave state alone by setting it to itself
+noStateChange :: Alex ()
+noStateChange = alexGetUserState >>= alexSetUserState 
 
 -----------------------------------------------------------------
 -- Lexing Control
