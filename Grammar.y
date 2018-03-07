@@ -23,9 +23,9 @@ import Control.Exception
     TABLE   { Token _ (TTable $$)}
     STRING  { Token _ (TString $$)}
 
--- TODO: Add associativity
-%left
-%right
+-- TODO: Check associativity
+%right '^'
+%right '.'
 %%
 
 -- Parser start: expect 0+ imports and 0+ queries
