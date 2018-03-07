@@ -1,6 +1,7 @@
 {
 module Grammar where
 import Tokens
+import Control.Exception
 }
 
 %name parseCalc
@@ -57,8 +58,11 @@ Exp      : Exp '^' Exp                         { Conjunction $1 $3 }
 -- Error Handling
 -----------------------------------------------------------------
 
+data ParseException = ParseException AlexPosn deriving Show
+instance Exception ParseException
+
 parseError :: [Token] -> a
-parseError p = error ("Parse error at location :" ++ show (getAlexPosn (head p))) -- TODO: make work?
+parseError p = throw (ParseException (getAlexPosn (head p)))
 
 getAlexPosn :: Token -> AlexPosn
 getAlexPosn (Token a b) = a
