@@ -9,30 +9,32 @@ $lower    = [a-z]
 $upper    = [A-Z]
 $alpha    = [$lower$upper]
 $alphanum = [$lower$upper$digit]
+$uppernum = [$upper$digit]
+$lowernum = [$lower$digit]
 
 tokens :-
-  <0>    $white+           ;
-  <0>    \/\*(.|\r?\n)*\*\/;
-  <0>    \/\/.*            ;
-  <0>    \;                { lexT  TSemicolon }
-  <0>    \,                { lexT  TComma }
-  <0>    \.                { lexT  TDot }
-  <0>    \=                { lexT  TEqual }  
-  <0>    \^                { lexT  TConjunction }
-  <0>    \<\-              { lexT  TLeftArrow }
-  <0>    \(                { lexT  TLParenthesis }
-  <0>    \)                { lexT  TRParenthesis } 
-  <0>    \$                { lexT  TExQual }
-  <0>    import            { lexT  TImport }
-  <0>    as                { lexT  TAs }
-  <0>    $lower$alphanum*  { lexT' TVar } -- TODO: Allow underscores
-  <0>    $upper+           { lexT' TTable } -- TODO: Allow underscores + numbers (but not at start)
+  <0>    $white+                ;
+  <0>    \/\*(.|\r?\n)*\*\/     ;
+  <0>    \/\/.*                 ;
+  <0>    \;                     { lexT  TSemicolon }
+  <0>    \,                     { lexT  TComma }
+  <0>    \.                     { lexT  TDot }
+  <0>    \=                     { lexT  TEqual }  
+  <0>    \^                     { lexT  TConjunction }
+  <0>    \<\-                   { lexT  TLeftArrow }
+  <0>    \(                     { lexT  TLParenthesis }
+  <0>    \)                     { lexT  TRParenthesis } 
+  <0>    \$                     { lexT  TExQual }
+  <0>    import                 { lexT  TImport }
+  <0>    as                     { lexT  TAs }
+  <0>    $lower($alphanum|\_)*  { lexT' TVar }
+  <0>    $upper($uppernum|\_)*  { lexT' TTable }
   
   -- String handling
-  <0>     \"               { beginString  } -- "
-  <strSC> \\[\"]           { escapeString } -- "
-  <strSC> \"               { finishString } -- "
-  <strSC> .                { storeString  }  
+  <0>     \"                    { beginString  } -- "
+  <strSC> \\[\"]                { escapeString } -- "
+  <strSC> \"                    { finishString } -- "
+  <strSC> .                     { storeString  }  
   
 {
 
@@ -51,9 +53,15 @@ lexT' :: (String -> TokenClass) -> AlexAction Token
 lexT' t i l = lexT (t $ getMatch i l) i l
 
 -- EOF definition defined so EOF token uses our Token type
+-- Also used to verify that EOF is expected in lexer's current state
 alexEOF :: Alex Token
-alexEOF = do (p, _, _, _) <- alexGetInput
-             return (Token p TEOF)
+alexEOF = do  
+  (p, _, _, _) <- alexGetInput
+  sc <- alexGetStartCode
+  -- Check if lexer state expects an EOF
+  (sc == strSC) ? (alexError "EOF reached inside string [TODO: Improve error]") $
+  -- EOF okay
+    return (Token p TEOF)            
 
 -- Extract matched string
 getMatch :: AlexInput -> Int -> String
@@ -62,9 +70,6 @@ getMatch (_, _, _, s) l =  take l s
 -----------------------------------------------------------------
 -- User State Control Functions
 -----------------------------------------------------------------
--- TODO: Does it matter that EOF errors do not occur when inside quotes? Can fix with SC check at alexScanUser 
--- but requires massive copying of generated code so not ideal.
-
 -- TODO: Handle multiline comments properly?
 
 -- Change the start code to indicate inside a string [No Token]
@@ -203,7 +208,16 @@ data TokenClass = TSemicolon
                 | TString String   
                 | TEOF
                   deriving (Eq, Show)
-  
+
+-----------------------------------------------------------------
+-- Haskell Utilities
+-----------------------------------------------------------------
+
+-- Functional infix if statement
+(?) :: Bool -> a -> a -> a
+(?) True x _ = x
+(?) False _ y = y
+
 }
 
 -- Helpful Links (collation of random sites used):
