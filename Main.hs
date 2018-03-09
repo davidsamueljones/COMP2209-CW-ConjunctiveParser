@@ -1,48 +1,30 @@
 module Main where
 import Tokens
 import Grammar
-import Data.Either
+import Data.Either.Compat
 import Control.Exception
 import Control.Monad
-
+import System.Exit
 
 main :: IO ()
-main =   do dat <- readFile "test_files/test.txt"
-            let tokens = lexString dat
-            when (isLeft tokens) $ putStr ("Lexer error: " ++ Main.fromLeft "" tokens)
-            let tokens' = Main.fromRight [] tokens
-            parse <- try(evaluate (parseCalc tokens')) :: IO (Either ParseException Prog)
-            case parse of
-                Left (ParseException (AlexPn charOffset lineNum columnNum)) -> putStrLn $ "Parse Error at line '" ++ show lineNum ++ "', column '" ++ show columnNum ++ "'"
-                Right expression -> print expression
-
-                
---Manually added these two functions since they arent available on old haskell versions              
-fromRight :: b -> Either a b -> b
-fromRight x (Left _) = x
-fromRight _ (Right x) = x
-
-fromLeft :: a -> Either a b -> a
-fromLeft _ (Left x) = x
-fromLeft x (Right _) = x
+main =   do 
+    dat <- readFile "test_files/test2.txt"
+    -- Lex input into tokens
+    let lexerResult = lexString dat
+    exitIfError lexerResult
+    -- No lex error so use tokens as input for parser
+    let tokens = fromRight [] lexerResult
+    parseResult <- runParse tokens
+    exitIfError parseResult
+    -- No parse error so use AST for interpretation 
+    let parsed = fromRight (Prog [] []) parseResult
+    print parsed -- FIXME: Do interpretation
 
 
+exitIfError :: Show a => Either a b -> IO ()
+exitIfError res = when (isLeft res) $ do 
+        die $ getError res
 
-
-
---TODO: FIX OR REMOVE
-
---main :: IO ()
---main =   do dat <- readFile "test_files/test.txt"
---            let tokens = lexString dat
---            if isRight(tokens) then do
---                let token' = head (rights [tokens])
---                let parse = try(evaluate (parseCalc token')) :: IO (Either ParseException Prog)
---                case parse of
---                    Left (ParseException (AlexPn charOffset lineNum columnNum)) -> putStrLn $ "Parse Error at line '" ++ show lineNum ++ "', column '" ++ show columnNum ++ "'"
---                    Right expression -> print expression
---            else putStrLn "Lexing Error" --TODO: Improve error message
---            let tokens' = fromRight [] tokens
---            let parse = case tokens of
---                Left _ = putStrLn "Lexing Error" --TODO: Improve error message
---                Right _ = try(evaluate (parseCalc tokens)) :: IO (Either ParseException Prog)
+getError :: Show a => Either a b -> String
+getError (Left e) = show $ e
+getError (Right _) = "No error"

@@ -4,7 +4,7 @@ import Tokens
 import Control.Exception
 }
 
-%name parseCalc
+%name parseTokens
 %tokentype { Token }
 %error { parseError }
 %token      
@@ -58,14 +58,21 @@ Exp      : Exp '^' Exp                         { Conjunction $1 $3 }
 -- Error Handling
 -----------------------------------------------------------------
 
-data ParseException = ParseException AlexPosn deriving Show
+-- Run with error handling
+runParse :: Tokens -> IO (Either ParseException Prog)
+runParse ts = try $ evaluate (parseTokens ts)
+
+-- TODO: Are we sure we want to lose information with the exception
+-- Possibly look into monadic approach
+data ParseException = ParseException AlexPosn
 instance Exception ParseException
 
-parseError :: [Token] -> a
-parseError p = throw (ParseException (getAlexPosn (head p)))
+-- TODO: Improve this error
+instance Show ParseException where
+  show (ParseException (AlexPn o l c)) = "Parse Error at line '" ++ show l ++ "', column '" ++ show c ++ "'"
 
-getAlexPosn :: Token -> AlexPosn
-getAlexPosn (Token a b) = a
+parseError :: [Token] -> a
+parseError p = throw (ParseException (tPosition (head p))) -- TODO: Verify head still doesn't cause errors
 
 -----------------------------------------------------------------
 -- Parsed Datatypes
