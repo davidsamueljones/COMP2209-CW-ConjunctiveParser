@@ -105,12 +105,12 @@ data Prog  = Prog
           deriving (Eq, Show)
 
 type Path  = String
-type Table = String 
+type TableID = String 
 type Vars  = [ Var ] 
 type Var   = String
 
 type Imports = [ Import ]
-data Import = Import Path Table
+data Import = Import Path TableID
             deriving (Eq, Show)
  
 type Queries = [ Query ]
@@ -119,7 +119,7 @@ data Query = Query Vars Exp
           
 data Exp = Conjunction Exp Exp
          | Equality Var Var
-         | Lookup Table Vars
+         | Lookup TableID Vars
          | ExQual Vars Exp            
          deriving (Eq, Show)
 
