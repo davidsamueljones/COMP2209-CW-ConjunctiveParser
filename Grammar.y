@@ -24,8 +24,8 @@ import Control.Exception
     STRING  { Token _ (TString $$)}
 
 -- TODO: Check associativity
-%right '^'
-%right '.'
+%right '.' -- In what event does changing this even do anything?
+%right '^' -- maybe left?
 %%
 
 -- Parser start: expect 0+ imports and 0+ queries
@@ -47,12 +47,29 @@ MoreVars : ',' VAR MoreVars                    { $2:$3 }
          | {- empty -}                         { [] }
 
 -- Use tree structure for expressions
-Exp      : Exp '^' Exp                         { Conjunction $1 $3 }
+Exp      : TABLE '(' Vars ')'                  { Lookup $1 $3 }
          | VAR '=' VAR                         { Equality $1 $3 }
-         | TABLE '(' Vars ')'                  { Lookup $1 $3 }
-         | '$' VAR '.' Exp                     { ExQual $2 $4 }
+         | '$' Vars '.' Exp                    { eqFlatten (ExQual $2 $4) }
+         | Exp '^' Exp                         { Conjunction $1 $3 }
 
 {
+
+-----------------------------------------------------------------
+-- Helper Functions
+-----------------------------------------------------------------
+
+-- Function to flatten vars from consecutive ExQual parse results 
+-- into a single parse result simplifying AST
+eqFlatten :: Exp -> Exp
+eqFlatten e@(ExQual _ _) = (ExQual (eqVars e) (eqNext e))
+  where
+    eqVars :: Exp -> Vars
+    eqVars (ExQual vs e@(ExQual _ _)) =  vs ++ eqVars e
+    eqVars (ExQual vs _) = vs
+    eqNext :: Exp -> Exp
+    eqNext (ExQual vs e@(ExQual _ _)) = eqNext e
+    eqNext (ExQual vs e) = e
+eqFlatten e = e
 
 -----------------------------------------------------------------
 -- Error Handling
@@ -71,8 +88,9 @@ instance Exception ParseException
 instance Show ParseException where
   show (ParseException (AlexPn o l c)) = "Parse Error at line '" ++ show l ++ "', column '" ++ show c ++ "'"
 
-parseError :: [Token] -> a
-parseError p = throw (ParseException (tPosition (head p))) -- TODO: Verify head still doesn't cause errors
+-- FIXME: Head causes errors if reaches EOF trying to match
+parseError :: Tokens -> a
+parseError p = throw (ParseException (tPosition (head p))) 
 
 -----------------------------------------------------------------
 -- Parsed Datatypes
@@ -102,7 +120,7 @@ data Query = Query Vars Exp
 data Exp = Conjunction Exp Exp
          | Equality Var Var
          | Lookup Table Vars
-         | ExQual Var Exp            
+         | ExQual Vars Exp            
          deriving (Eq, Show)
 
 }
