@@ -39,10 +39,8 @@ tokens :-
 {
 
 -----------------------------------------------------------------
--- Lexing Helper Functions
+-- Generic Lexing Functions
 -----------------------------------------------------------------
--- Alex :: (AlexState -> Either String (AlexState, a)) -> Alex a
--- AlexAction Token :: (AlexInput -> Int -> Alex Token)
 
 -- Get Token from a monad wrapper input
 lexT :: TokenClass -> AlexAction Token
@@ -59,7 +57,7 @@ alexEOF = do
   (p, _, _, _) <- alexGetInput
   sc <- alexGetStartCode
   -- Check if lexer state expects an EOF
-  (sc == strSC) ? (alexError "EOF reached inside string [TODO: Improve error]") $
+  (sc == strSC) ? (alexError' LEStringEOF "") $
   -- EOF okay
     return (Token p TEOF)            
 
@@ -160,13 +158,46 @@ lexString str = runAlex str alexMonadScanAll
 alexMonadScanAll :: Alex [Token]
 alexMonadScanAll = do
   -- Scan control loop
-  let loop ts = do t@(Token p c) <- alexMonadScan; 
+  let loop ts = do t@(Token p c) <- alexMonadScan'; 
                    if c == TEOF then 
                      return (reverse ts) 
                    else 
                      loop (t:ts)
   -- Start loop 
   loop []
+
+
+
+
+-- TODO: Can we redirect everything but AlexError to the original generation?
+-- Custom monad scan to make use of improved error handling
+alexMonadScan' = do
+  inp <- alexGetInput
+  sc <- alexGetStartCode
+  case alexScan inp sc of
+    AlexEOF -> alexEOF
+    AlexError _ -> alexError' LENotToken ""
+    AlexSkip  inp' _len -> do
+        alexSetInput inp'
+        alexMonadScan'
+    AlexToken inp' len action -> do
+        alexSetInput inp'
+        action (ignorePendingBytes inp) len
+
+-- TODO: Actually improve error messages, currently just structure
+-- Custom error handling, displaying more specific error messages
+alexError' :: LexerErrorType -> String -> Alex a
+alexError' t m = do 
+  (p, c, bs, s) <- alexGetInput
+  sc <- alexGetStartCode
+  us <- alexGetUserState
+  case t of
+    LEStringEOF -> alexError $ "EOF STRING " ++ readAlexPos p ++ (show us)
+    LENotToken  -> alexError $ "Lexical error at " ++ readAlexPos p ++ (show s)
+
+
+readAlexPos :: AlexPosn -> String
+readAlexPos (AlexPn a l c) = (show l) ++ ":" ++ (show c)
 
 -----------------------------------------------------------------
 -- Lexing Datatypes
@@ -184,6 +215,7 @@ data AlexUserState  = AlexUserState
 -----------------------------------------------------------------
 
 -- Wrapper for TokenClass that holds position 
+type Tokens = [Token]
 data Token  = Token
             {
               tPosition :: AlexPosn,
@@ -209,6 +241,10 @@ data TokenClass = TSemicolon
                 | TEOF
                   deriving (Eq, Show)
 
+
+data LexerErrorType = LEStringEOF
+                    | LENotToken
+                    deriving (Eq, Show)
 -----------------------------------------------------------------
 -- Haskell Utilities
 -----------------------------------------------------------------
