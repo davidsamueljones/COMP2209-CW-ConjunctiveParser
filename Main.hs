@@ -1,10 +1,12 @@
 module Main where
 import Tokens
 import Grammar
+import Interpreter
+
 import Data.Either.Compat
 import Control.Exception
 import Control.Monad
-import System.Exit
+import System.Exit   
 
 main :: IO ()
 main =   do 
@@ -17,13 +19,14 @@ main =   do
     parseResult <- runParse tokens
     exitIfError parseResult
     -- No parse error so use AST for interpretation 
-    let parsed = fromRight (Prog [] []) parseResult
-    print parsed -- FIXME: Do interpretation
+    let ast = fromRight (Prog [] []) parseResult
+    --let output = runInterpreter ast
+    --putStrLn output -- FIXME: Do interpretation
+    putStrLn $ show ast
 
 
 exitIfError :: Show a => Either a b -> IO ()
-exitIfError res = when (isLeft res) $ do 
-        die $ getError res
+exitIfError res = when (isLeft res) $ die (getError res)
 
 getError :: Show a => Either a b -> String
 getError (Left e) = show $ e
