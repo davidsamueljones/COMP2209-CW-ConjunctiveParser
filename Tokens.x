@@ -13,28 +13,39 @@ $uppernum = [$upper$digit]
 $lowernum = [$lower$digit]
 
 tokens :-
-  <0>    $white+                ;
-  <0>    \/\*(.|\r?\n)*\*\/     ;
-  <0>    \/\/.*                 ;
-  <0>    \;                     { lexT  TSemicolon }
-  <0>    \,                     { lexT  TComma }
-  <0>    \.                     { lexT  TDot }
-  <0>    \=                     { lexT  TEqual }  
-  <0>    \^                     { lexT  TConjunction }
-  <0>    \<\-                   { lexT  TLeftArrow }
-  <0>    \(                     { lexT  TLParenthesis }
-  <0>    \)                     { lexT  TRParenthesis } 
-  <0>    \$                     { lexT  TExQual }
-  <0>    import                 { lexT  TImport }
-  <0>    as                     { lexT  TAs }
-  <0>    $lower($alphanum|\_)*  { lexT' TVar }
-  <0>    $upper($uppernum|\_)*  { lexT' TTable }
+  -- Whitespace handling
+  <0>       $white+               ;
+
+  -- Multi-line comment handling  
+  <0>       \/\*                   { addCommentLayer } -- base case
+  <commSC>  \/\*                   { addCommentLayer }
+  <commSC>  \*\/                   { removeCommentLayer }
+  <commSC>  (.|\r?\n)              ; -- Ignore character/new line
+  
+  -- Single line comment handling 
+  <0>       \/\/.*                 ; -- Ignore line
   
   -- String handling
-  <0>     \"                    { beginString  } -- "
-  <strSC> \\[\"]                { escapeString } -- "
-  <strSC> \"                    { finishString } -- "
-  <strSC> .                     { storeString  }  
+  <0>       \"                     { beginString  } -- "
+  <strSC>   \\[\"]                 { escapeString } -- "
+  <strSC>   \"                     { finishString } -- "
+  <strSC>   (\r?\n)                ; -- Ignore line breaks
+  <strSC>   .                      { storeString  }  
+
+  -- Language handling
+  <0>       \;                     { lexT  TSemicolon }
+  <0>       \,                     { lexT  TComma }
+  <0>       \.                     { lexT  TDot }
+  <0>       \=                     { lexT  TEqual }  
+  <0>       \^                     { lexT  TConjunction }
+  <0>       \<\-                   { lexT  TLeftArrow }
+  <0>       \(                     { lexT  TLParenthesis }
+  <0>       \)                     { lexT  TRParenthesis } 
+  <0>       \$                     { lexT  TExQual }
+  <0>       import                 { lexT  TImport }
+  <0>       as                     { lexT  TAs }
+  <0>       $lower($alphanum|\_)*  { lexT' TVar }
+  <0>       $upper($uppernum|\_)*  { lexT' TTable }
   
 {
 
@@ -57,7 +68,8 @@ alexEOF = do
   (p, _, _, _) <- alexGetInput
   sc <- alexGetStartCode
   -- Check if lexer state expects an EOF
-  (sc == strSC) ? (alexError' LEStringEOF "") $
+  (sc == commSC)   ? (alexError' LECommentEOF "") $
+    (sc == strSC) ? (alexError' LEStringEOF "") $
   -- EOF okay
     return (Token p TEOF)            
 
@@ -66,16 +78,72 @@ getMatch :: AlexInput -> Int -> String
 getMatch (_, _, _, s) l =  take l s
 
 -----------------------------------------------------------------
--- User State Control Functions
+-- Generic State Control Functions
 -----------------------------------------------------------------
--- TODO: Handle multiline comments properly?
+
+-- Identifier for normal start code
+baseSC :: Int
+baseSC = 0
+
+-- Configure the initial user state of the lexer (called by generated code)
+alexInitUserState  :: AlexUserState
+alexInitUserState   = AlexUserState
+                    {
+                      lexerCommentDepth  = 0,
+                      lexerStringValue   = ""
+                    }
+
+-- Leave state alone by setting it to itself
+noStateChange :: Alex ()
+noStateChange = alexGetUserState >>= alexSetUserState 
+
+-----------------------------------------------------------------
+-- Comment State Control Functions
+-----------------------------------------------------------------
+
+-- Increment value of comment depth, setting start code respectively
+addCommentLayer :: AlexAction Token
+addCommentLayer i l = do
+  changeLexerCommentDepth 1
+  begin commSC i l
+
+-- Decrement value of comment depth, setting start code respectively
+removeCommentLayer :: AlexAction Token
+removeCommentLayer i l = do
+  changeLexerCommentDepth (-1)
+  d <- getLexerCommentDepth
+  case d of
+    0 -> begin baseSC i l
+    _ -> skip i l
+
+-- Change the comment depth value stored in the lexer state by the given amount
+changeLexerCommentDepth :: Int -> Alex ()
+changeLexerCommentDepth x = do
+  cur <- getLexerCommentDepth
+  let new = cur + x
+  setLexerCommentDepth new
+
+-- Get the value stored in the lexer state's comment depth indicator
+getLexerCommentDepth :: Alex Int
+getLexerCommentDepth = do
+  ust <- alexGetUserState
+  return (lexerCommentDepth ust)
+
+-- Set the comment depth in the lexer state to the specified value
+setLexerCommentDepth :: Int -> Alex ()
+setLexerCommentDepth x = do
+  ust <- alexGetUserState
+  alexSetUserState ust {lexerCommentDepth = x}
+
+-----------------------------------------------------------------
+-- String State Control Functions
+-----------------------------------------------------------------
 
 -- Change the start code to indicate inside a string [No Token]
 beginString :: AlexAction Token
 beginString i l = do
-  alexSetStartCode strSC
   setLexerStringValue ""
-  skip i l
+  begin strSC i l
 
 -- Handle escape characters behaviour [No Token]
 escapeString :: AlexAction Token
@@ -95,25 +163,9 @@ storeString i l = do
 -- using normal lexing functions (buffer is reversed)
 finishString :: AlexAction Token
 finishString i l = do
-  alexSetStartCode initialSC
+  alexSetStartCode baseSC
   s <- getLexerStringValue
   lexT (TString $ reverse s) i l
-
------------------------------------------------------------------
--- Generic State Control Functions
------------------------------------------------------------------
-
--- Identifier for initial start code
-initialSC :: Int
-initialSC = 0;
-
--- Configure the initial user state of the lexer (called by generated code)
-alexInitUserState  :: AlexUserState
-alexInitUserState   = AlexUserState
-                    {
-                      lexerCommentDepth  = 0,
-                      lexerStringValue   = ""
-                    }
 
 -- Get the value stored in the lexer state's string buffer
 getLexerStringValue :: Alex String
@@ -141,10 +193,6 @@ addCharToLexerStringValue c = do
   let ss = c:(lexerStringValue ust)
   setLexerStringValue ss
 
--- Leave state alone by setting it to itself
-noStateChange :: Alex ()
-noStateChange = alexGetUserState >>= alexSetUserState 
-
 -----------------------------------------------------------------
 -- Lexing Control
 -----------------------------------------------------------------
@@ -165,8 +213,6 @@ alexMonadScanAll = do
                      loop (t:ts)
   -- Start loop 
   loop []
-
-
 
 
 -- TODO: Can we redirect everything but AlexError to the original generation?
@@ -192,15 +238,16 @@ alexError' t m = do
   sc <- alexGetStartCode
   us <- alexGetUserState
   case t of
-    LEStringEOF -> alexError $ "EOF STRING " ++ readAlexPos p ++ (show us)
-    LENotToken  -> alexError $ "Lexical error at " ++ readAlexPos p ++ (show s)
+    LECommentEOF -> alexError $ "Lexing Error: Comment not terminated before EOF"
+    LEStringEOF -> alexError $ "Lexing Error: String not terminated before EOF"
+    LENotToken  -> alexError $ "Lexing Error: Unrecognised token at " ++ readAlexPos p
 
 
 readAlexPos :: AlexPosn -> String
 readAlexPos (AlexPn a l c) = (show l) ++ ":" ++ (show c)
 
 -----------------------------------------------------------------
--- Lexing Datatypes
+-- Lexer Datatypes
 -----------------------------------------------------------------
 
 data AlexUserState  = AlexUserState
@@ -241,10 +288,11 @@ data TokenClass = TSemicolon
                 | TEOF
                   deriving (Eq, Show)
 
-
 data LexerErrorType = LEStringEOF
+                    | LECommentEOF
                     | LENotToken
                     deriving (Eq, Show)
+
 -----------------------------------------------------------------
 -- Haskell Utilities
 -----------------------------------------------------------------
