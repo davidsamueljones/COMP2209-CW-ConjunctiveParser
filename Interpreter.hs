@@ -1,5 +1,10 @@
 module Interpreter where
 import Grammar
+import Control.Exception
+import Text.Regex (splitRegex, mkRegex)
+import Data.Either
+import Control.Monad
+import System.Exit   
 
 data Table = Table {titles :: Vars,
                     columns :: [[String]]}
@@ -7,6 +12,7 @@ data Table = Table {titles :: Vars,
                     
                     
 testTable = (Table ["x1","x2"] [["Pawel"],["Sobocinski"]])
+testTable1 = (Table ["x3","x4"] [["Julian"],["Rathke"]])
 testTable2 = (Table ["x1","x2"] [["1","1"],["2","2"]])
 testTable3 = (Table ["x3","x4"] [["3","3"],["4","4"]])
 testTable4 = (Table ["x1","x2"] [["1","1"],["3","2"]])
@@ -29,12 +35,38 @@ overlappedConj :: Table -> Table -> Table
 overlappedConj (Table titlesA columnsA) (Table titlesB columnsB) = (Table (otherATitles ++ keyTitles ++ otherBTitles) columns)
                              where aRows = transpose columnsA
                                    keyTitles = getOverlapping titlesA titlesB
-                                   otherATitles = notOverlapping titlesA titlesB
-                                   otherBTitles = notOverlapping titlesA titlesB
-                                   columns = transpose ([a ++ b |a <- aRows, let aKey = removeOthersFromRow keyTitles titlesA a, let aOther = removeFromRow keyTitles titlesA a, b <- getMatchingRows aKey keyTitles (Table titlesB columnsB) ]) --TODO: Im sorry david ill shorten this
+                                   otherATitles = notOverlapping titlesA keyTitles
+                                   otherBTitles = notOverlapping titlesB keyTitles
+                                   columns = transpose ([aOther ++ b |a <- aRows, let aKey = removeOthersFromRow keyTitles titlesA a, let aOther = removeFromRow keyTitles titlesA a, b <- getMatchingRows aKey keyTitles (Table titlesB columnsB) ]) --TODO: Im sorry david ill shorten this
     
- 
-    
+  
+
+-- Imports a csv file into zipped columns
+importTable :: FilePath -> IO (Either InterException [[String]])
+importTable f = do 
+    res <- try $ readFile f :: IO (Either IOError String)
+    case res of
+      Left e -> throw (InterExceptionImport e)
+      Right dat -> do
+        -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
+        let tokenise = map (splitRegex (mkRegex ",")) . lines
+        return (multiZip' $ tokenise dat)
+
+-- Zip rows into column lists, failing if columns are not all equal length
+multiZip' :: [[a]] -> Either InterException [[a]]
+multiZip' xss | allLensSame xss = Right (multiZip xss)
+multiZip' xss | otherwise       = throw InterExceptionZip
+
+-- Zip rows into column lists
+multiZip :: [[a]] -> [[a]]
+multiZip xss | maxListLen xss == 0 = []
+multiZip xss = foldl (++) [] line : multiZip rest
+    where line = map (take 1) xss
+          rest = map (drop 1) xss
+
+-- Find the longest row in a list
+maxListLen :: [[a]] -> Int
+maxListLen xss = maximum $ map length xss
 
 -- Get length of all rows, true if all equal
 allLensSame :: [[a]] -> Bool
