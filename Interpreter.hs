@@ -1,7 +1,6 @@
 module Interpreter where
 import Grammar
 import Control.Exception
-import Text.Regex (splitRegex, mkRegex)
 import Data.Either
 import Control.Monad
 import System.Exit   
@@ -38,67 +37,6 @@ overlappedConj (Table titlesA columnsA) (Table titlesB columnsB) = (Table (other
                                    otherATitles = notOverlapping titlesA keyTitles
                                    otherBTitles = notOverlapping titlesB keyTitles
                                    columns = transpose ([aOther ++ b |a <- aRows, let aKey = removeOthersFromRow keyTitles titlesA a, let aOther = removeFromRow keyTitles titlesA a, b <- getMatchingRows aKey keyTitles (Table titlesB columnsB) ]) --TODO: Im sorry david ill shorten this
-    
-  
-
--- Imports a csv file into zipped columns
-importTable :: FilePath -> IO (Either InterException [[String]])
-importTable f = do 
-    res <- try $ readFile f :: IO (Either IOError String)
-    case res of
-      Left e -> throw (InterExceptionImport e)
-      Right dat -> do
-        -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
-        let tokenise = map (splitRegex (mkRegex ",")) . lines
-        return (multiZip' $ tokenise dat)
-
--- Zip rows into column lists, failing if columns are not all equal length
-multiZip' :: [[a]] -> Either InterException [[a]]
-multiZip' xss | allLensSame xss = Right (multiZip xss)
-multiZip' xss | otherwise       = throw InterExceptionZip
-
--- Zip rows into column lists
-multiZip :: [[a]] -> [[a]]
-multiZip xss | maxListLen xss == 0 = []
-multiZip xss = foldl (++) [] line : multiZip rest
-    where line = map (take 1) xss
-          rest = map (drop 1) xss
-
--- Find the longest row in a list
-maxListLen :: [[a]] -> Int
-maxListLen xss = maximum $ map length xss
-
--- Get length of all rows, true if all equal
-allLensSame :: [[a]] -> Bool
-allLensSame xss = allValsSame $ map length xss
-
--- True if all values in list are equal 
-allValsSame :: Eq a =>[a] -> Bool
-allValsSame xs = all (== head xs) (tail xs)
-
-
------------------------------------------------------------------
--- Interpreter Exceptions
------------------------------------------------------------------
-data InterException = InterExceptionZip
-                    | InterExceptionImport IOError
-                    deriving (Show)
-
-instance Exception InterException
-
-
-
--- Our Rules:
--- * A variable that appears under the scope of an existential quantifier is 
---   said to be bound, otherwise it is free
--- * LHS of turnstile must have all free variables 
--- * Free variables must all be in the scope of at least one relation
-
--- Musings:
--- * Probably want either CEK or CESK interpreter, probably don't need store 
---   in CESK but who knows...
--- * Looks like breaking down into normal form a good idea?
--- * Use HashMap package for the environment?
 
 -- Helper functions
 removeFromRow :: [String] -> [String] -> [String] -> [String]
@@ -206,6 +144,135 @@ transpose xs
     | length (head xs) >1 = [(map head xs)] ++ transpose (map tail xs)
     | otherwise = [(map head xs)]
 
+
+-----------------------------------------------------------------
+-- Table Importer
+-----------------------------------------------------------------
+
+-- Imports a csv file into zipped columns
+importTable :: FilePath -> IO (Either InterException [[String]])
+importTable f = do 
+    res <- try $ readFile f :: IO (Either IOError String)
+    case res of
+      Left e -> throw (InterExceptionImport e)
+      Right dat -> do
+        -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
+        let tokenise = map (parseCSVLine) . lines
+        return (multiZip' $ tokenise dat)
+
+
+-----------------------------------------------------------------
+-- 'Simple' CSV Line Parser
+-----------------------------------------------------------------
+-- Alternative to regex based approaches, which would be far 
+-- easier, yet require unavailable libraries. Allows for CSV lines
+-- to be split with any characters between commas; this includes
+-- commas provided they are escaped with a backslash.
+
+
+-- FIXME: This was pretty dumb, maybe a better way would be to do a split
+-- by ',' using splitOn from Data.List.Split, then iterate over created arrays and
+-- if there is a 'free' backslash, as in last element of array not directly 
+-- preceeded by another backslash the slash is removed, a comma is placed and the two
+-- arrays are rejoined. Not speed efficient but probably better... 
+
+parseCSVLine :: String -> [String]
+parseCSVLine xs = processEscapes (csvSplit xs) csvEscapes 
+
+csvSplit :: String -> [ String ]
+csvSplit [] = []
+csvSplit xs = (fst (split xs)) : csvSplit (drop 1 (snd (split xs)))
+
+csvEscapes :: [(String, String)]
+csvEscapes = [("\\,", ",")]
+
+-- FIXME: Relies on replace which isn't included normally...
+processEscapes :: Eq a => [a] -> [(a, a)] -> [a]
+processEscapes xs []         = xs
+processEscapes xs ((x,y):es) = processEscapes (replace x y xs) es
+
+split :: String -> (String, String)
+split xs = mapTuple (fmap snd) (rawSplit xs)
+
+rawSplit :: String -> ([(Char, Char)], [(Char, Char)])
+rawSplit xs = span (not . csvDelimiter) (adjs xs)
+
+adjs :: String -> [(Char, Char)]
+adjs xs = zip ('\0' : init xs) xs
+
+csvDelimiter :: (Char, Char) -> Bool
+csvDelimiter ('\\', ',') = False
+csvDelimiter (_   , ',') = True
+csvDelimiter  _          = False
+
+-- Helper functions
+mapTuple :: (a -> b) -> (a, a) -> (b, b)
+mapTuple f (x, y) = (f x, f y)
+
+-- FIXME: Does nothing...
+replace :: Eq a => a -> a -> [a] -> [a]
+replace x y xs = xs
+
+--replace old new = intercalate new . splitOn old
+-- ^^^ Data.String.Utils
+
+-----------------------------------------------------------------
+-- Rows -> Columns
+-----------------------------------------------------------------
+
+-- Zip rows into column lists, failing if columns are not all equal length
+multiZip' :: [[a]] -> Either InterException [[a]]
+multiZip' xss | allLensSame xss = Right (multiZip xss)
+multiZip' xss | otherwise       = throw InterExceptionZip
+
+-- Zip rows into column lists
+multiZip :: [[a]] -> [[a]]
+multiZip xss | maxListLen xss == 0 = []
+multiZip xss = foldl (++) [] line : multiZip rest
+    where line = map (take 1) xss
+          rest = map (drop 1) xss
+
+-- Find the longest row in a list
+maxListLen :: [[a]] -> Int
+maxListLen xss = maximum $ map length xss
+
+-- Get length of all rows, true if all equal
+allLensSame :: [[a]] -> Bool
+allLensSame xss = allValsSame $ map length xss
+
+-- True if all values in list are equal 
+allValsSame :: Eq a =>[a] -> Bool
+allValsSame xs = all (== head xs) (tail xs)
+
+
+-----------------------------------------------------------------
+-- Interpreter Exceptions
+-----------------------------------------------------------------
+data InterException = InterExceptionZip
+                    | InterExceptionImport IOError
+                    deriving (Show)
+
+instance Exception InterException
+
+
+
+-----------------------------------------------------------------
+-- TODO!!!
+-----------------------------------------------------------------
+
+-- Our Rules:
+-- * A variable that appears under the scope of an existential quantifier is 
+--   said to be bound, otherwise it is free
+-- * LHS of turnstile must have all free variables 
+-- * Free variables must all be in the scope of at least one relation
+
+-- Musings:
+-- * Probably want either CEK or CESK interpreter, probably don't need store 
+--   in CESK but who knows...
+-- * Looks like breaking down into normal form a good idea?
+-- * Use HashMap package for the environment?
+
 -- http://matt.might.net/articles/cek-machines/
 -- http://matt.might.net/articles/cesk-machines/
 -- https://wiki.haskell.org/wikiupload/c/c6/ICMI45-paper-en.pdf
+
