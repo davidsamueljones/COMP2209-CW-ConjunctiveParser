@@ -4,10 +4,20 @@ import Grammar
 data Table = Table {titles :: Vars,
                     columns :: [[String]]}
                     deriving Show
+                    
+                    
+testTable = (Table ["x1","x2"] [["Pawel"],["Sobocinski"]])
+testTable2 = (Table ["x1","x2"] [["1","1"],["2","2"]])
+testTable3 = (Table ["x3","x4"] [["3","3"],["4","4"]])
+testTable4 = (Table ["x1","x2"] [["1","1"],["3","2"]])
+testTable5 = (Table ["x2","x3"] [["3","3","2"],["1","2","2"]])
+testTable6 = (Table ["x1","x2"] [["1","1"],["2","2"]])
+testTable7 = (Table ["x2","x3"] [["2","2"],["1","1"]])
 
 -- TODO: Just ya know, write this thing?
 --runInterpreter :: Show a => Prog -> [a]
 --runInterpreter ast = []
+
 
 interpretConjunction :: Table -> Table -> Table
 interpretConjunction (Table titlesA columnsA) (Table titlesB columnsB)
@@ -25,6 +35,27 @@ overlappedConj (Table titlesA columnsA) (Table titlesB columnsB) = (Table (other
     
  
     
+
+-- Get length of all rows, true if all equal
+allLensSame :: [[a]] -> Bool
+allLensSame xss = allValsSame $ map length xss
+
+-- True if all values in list are equal 
+allValsSame :: Eq a =>[a] -> Bool
+allValsSame xs = all (== head xs) (tail xs)
+
+
+-----------------------------------------------------------------
+-- Interpreter Exceptions
+-----------------------------------------------------------------
+data InterException = InterExceptionZip
+                    | InterExceptionImport IOError
+                    deriving (Show)
+
+instance Exception InterException
+
+
+
 -- Our Rules:
 -- * A variable that appears under the scope of an existential quantifier is 
 --   said to be bound, otherwise it is free
@@ -116,9 +147,11 @@ getMatchingRows keyVars keyTitles table = getMatchingRows' keyVars keyRows other
                       otherRows = transpose otherColumns
     
 getMatchingRows' :: [Var] -> [[String]] -> [[String]] -> [[String]]
+getMatchingRows' _ [] [] = []
 getMatchingRows' ks (kv:kvs) (r:rs)
     | ks == kv   = [kv ++ r] ++ getMatchingRows' ks kvs rs
     | otherwise = getMatchingRows' ks kvs rs
+getMatchingRows' _ _ _ = [] --If all variables are in key variables
     
 --getMatchingRows :: Var -> Var -> Table -> [[String]]
 --getMatchingRows varName titleName (Table titles columns)
@@ -137,7 +170,9 @@ getMatchingRows' ks (kv:kvs) (r:rs)
 
 transpose :: [[a]] -> [[a]]
 transpose [] = []
-transpose xs = [(map head xs)] ++ transpose (map tail xs)
+transpose xs 
+    | length (head xs) >1 = [(map head xs)] ++ transpose (map tail xs)
+    | otherwise = [(map head xs)]
 
 -- http://matt.might.net/articles/cek-machines/
 -- http://matt.might.net/articles/cesk-machines/
