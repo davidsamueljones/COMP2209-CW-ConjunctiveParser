@@ -7,6 +7,7 @@ import Control.Exception
 import Control.Monad
 import System.Exit   
 
+
 main :: IO ()
 main =   do 
   dat <- readFile "test_files/test3.txt"
