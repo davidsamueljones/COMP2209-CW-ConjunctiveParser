@@ -1,0 +1,2 @@
+import "A.csv" as A; 
+y <- C(y,t)^$e.A(e,y)^B(a,b);

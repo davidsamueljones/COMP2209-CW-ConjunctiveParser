@@ -24,7 +24,7 @@ import Control.Exception
     STRING  { Token _ (TString $$)}
 
 -- TODO: Check associativity
-%right '.' -- In what event does changing this even do anything?
+%nonassoc '.'
 %left '^'
 %%
 

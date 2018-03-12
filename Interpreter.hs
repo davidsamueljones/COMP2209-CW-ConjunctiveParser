@@ -3,146 +3,114 @@ import Grammar
 import Control.Exception
 import Data.Either
 import Control.Monad
-import System.Exit   
+import System.Exit  
+import Data.List
+import Data.Maybe 
 
-data Table = Table {titles :: Vars,
-                    columns :: [[String]]}
-                    deriving Show
-                    
-                    
-testTable = (Table ["x1","x2"] [["Pawel"],["Sobocinski"]])
-testTable1 = (Table ["x3","x4"] [["Julian"],["Rathke"]])
-testTable2 = (Table ["x1","x2"] [["1","1"],["2","2"]])
-testTable3 = (Table ["x3","x4"] [["3","3"],["4","4"]])
-testTable4 = (Table ["x1","x2"] [["1","1"],["3","2"]])
-testTable5 = (Table ["x2","x3"] [["3","3","2"],["1","2","2"]])
-testTable6 = (Table ["x1","x2"] [["1","1"],["2","2"]])
-testTable7 = (Table ["x2","x3"] [["2","2"],["1","1"]])
+type ColumnTable = [Column] 
+type RowTable = [Row]
+type ColumnData = [String]
+type RowData = [String]
+type ColumnID = Var
+
+data Column = Column
+            {
+               columnID :: ColumnID,
+               columnData :: ColumnData
+            } deriving Show
+            
+data Row = Row
+            {
+               columnIDs :: [ColumnID],
+               rowData :: RowData
+            } deriving Show
+            
+testColumn= [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
+testColumn1= [(Column "x3" ["Julian"]),(Column "x4" ["Rakthe"])]
+
+testColumn2= [(Column "x1" ["1","1"]),(Column "x2" ["3","3"])]
+testColumn3= [(Column "x3" ["3","3"]),(Column "x4" ["4","4"])]
+
+testColumn4= [(Column "x1" ["1","1"]),(Column "x2" ["3","2"])]
+testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
+
+--testTable1 = (Column["x3","x4"] [["Julian"],["Rathke"]])
+--testTable2 = (Column["x1","x2"] [["1","1"],["2","2"]])
+--testTable3 = (Column["x3","x4"] [["3","3"],["4","4"]])
+--testTable4 = (Column["x1","x2"] [["1","1"],["3","2"]])
+--testTable5 = (Column["x2","x3"] [["3","3","2"],["1","2","2"]])
+--testTable6 = (Column["x1","x2"] [["1","1"],["2","2"]])
+--testTable7 = (Column["x2","x3"] [["2","2"],["1","1"]])
 
 -- TODO: Just ya know, write this thing?
 --runInterpreter :: Show a => Prog -> [a]
 --runInterpreter ast = []
 
 
-interpretConjunction :: Table -> Table -> Table
-interpretConjunction (Table titlesA columnsA) (Table titlesB columnsB)
---    | elementsOverlap titlesA titlesB   = (Table (titlesA ++ titlesB) (transpose ([rowA ++ [c] ++ rowB |     
-    | elementsOverlap titlesA titlesB   = overlappedConj (Table titlesA columnsA) (Table titlesB columnsB)
-    | otherwise                         = (Table (titlesA ++ titlesB) (transpose ([rowA ++ rowB | rowA <- transpose columnsA, rowB <- transpose columnsB]))) --TODO: Tidy up :)
-    
-overlappedConj :: Table -> Table -> Table
-overlappedConj (Table titlesA columnsA) (Table titlesB columnsB) = (Table (otherATitles ++ keyTitles ++ otherBTitles) columns)
-                             where aRows = transpose columnsA
-                                   keyTitles = getOverlapping titlesA titlesB
-                                   otherATitles = notOverlapping titlesA keyTitles
-                                   otherBTitles = notOverlapping titlesB keyTitles
-                                   columns = transpose ([aOther ++ b |a <- aRows, let aKey = removeOthersFromRow keyTitles titlesA a, let aOther = removeFromRow keyTitles titlesA a, b <- getMatchingRows aKey keyTitles (Table titlesB columnsB) ]) --TODO: Im sorry david ill shorten this
+conjunction :: [Column] -> [Column] -> [Column]
+conjunction c1 c2 = removeDupCols $ transposeRow combined
+                  where r1 = transposeCol c1
+                        r2 = transposeCol c2
+                        ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
+                        vars = getDupCols ids
+                        combined = [(Row ids (rowData a ++ rowData b))| a <- r1, b <- r2, sameVars vars a b]
+                     
+combine :: [Row] -> [Row] -> [Row]
+combine r1 r2 = [(Row ids (a ++ b))| a <- map rowData r1, b <- map rowData r2]
+              where ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
+                        
+sameVars :: [Var] -> Row -> Row -> Bool
+sameVars vars row1 row2 = foldr (&&) True [a | b <- vars, let a = sameVar b row1 row2]
+            
+sameVar :: Var -> Row -> Row -> Bool
+sameVar var row1 row2 = (getVar var row1) == (getVar var row2)
 
--- Helper functions
-removeFromRow :: [String] -> [String] -> [String] -> [String]
-removeFromRow vars titles row = [v | n <- [0..(length titles -1)],let v = row !! n, let a = titles !! n, notElem a vars]
+getVar :: Var -> Row -> Var
+getVar var (Row columnIDs rowData)
+  | elem var columnIDs = rowData !! fromJust (elemIndex var columnIDs)
+  | otherwise          = error ("getVar called with no element")--TODO Exception
+ 
+getDupCols :: [ColumnID] -> [Var]
+getDupCols [] = []
+getDupCols (x:xs)
+    | elem x xs = [x] ++ getDupCols xs
+    | otherwise = getDupCols xs
 
-removeOthersFromRow :: [String] -> [String] -> [String] -> [String]
-removeOthersFromRow vars titles row = [v | n <- [0..(length titles -1)],let v = row !! n, let a = titles !! n,elem a vars]
+removeDupCols :: [Column] -> [Column]
+removeDupCols [] = []
+removeDupCols (x:xs)
+  | elem id idList = removeDupCols xs
+  | otherwise = [x] ++ removeDupCols xs
+  where idList = map columnID xs
+        id = columnID x
 
-elementsOverlap :: Eq a => [a] -> [a] -> Bool
-elementsOverlap [] ys = False
-elementsOverlap (x:xs) ys = elem x ys || elementsOverlap xs ys
+transposeCol :: [Column] -> [Row]
+transposeCol t = transposeCol' (map columnID t) (map columnData t)
+transposeCol' :: [ColumnID] -> [[String]] -> [Row]
+transposeCol' _ [] = []
+transposeCol' ids columns 
+  | (length $ head columns) > 1 = [(Row ids row)] ++ transposeCol' ids tailColumns
+  | otherwise          = [(Row ids row)]
 
-getOverlapping :: Eq a => [a] -> [a] -> [a]
-getOverlapping [] _ = []
-getOverlapping (x:xs) ys
-    | elem x ys = [x] ++ getOverlapping xs ys
-    | otherwise = getOverlapping xs ys
-   
-notOverlapping :: Eq a => [a] -> [a] -> [a]
-notOverlapping [] _ = []
-notOverlapping (x:xs) ys
-    | notElem x ys = [x] ++ notOverlapping xs ys
-    | otherwise = getOverlapping xs ys
+  where row = map head columns
+        tailColumns = map tail columns
+  
+transposeRow :: [Row] -> [Column]
+transposeRow (t:ts) = transposeRow' (columnIDs t) (map rowData (t:ts))
+transposeRow' :: [ColumnID] -> [[String]] -> [Column]
+transposeRow' _ [] = []
+transposeRow' (x:xs) rows
+  | xs == []  = [(Column x column)]
+  | otherwise =[(Column x column)] ++ transposeRow' xs tailRows
+  where column = map head rows
+        tailRows = map tail rows
 
-getColumns :: Table -> [[String]]
-getColumns (Table _ cs) = cs
+colStringArr :: [Column] -> [[String]]
+colStringArr t = map columnData t
 
-getTitles :: Table -> [String]
-getTitles (Table ts _) = ts
+rowStringArr :: [Row] -> [[String]]
+rowStringArr t = map rowData t
 
-containsColumn :: Var -> Table -> Bool
-containsColumn name (Table ts _) = elem name ts
-
-findColumn :: Var -> Table -> [String]
-findColumn var (Table [] []) = []
-findColumn var (Table (t:ts) (c:cs))
-    | (var == t) && (notElem var ts)    = c
-    | (var == t)                        = [] -- TODO: decide how to handle this case of repeated element names within table e.g. T(x1,x2,x2)   
-    | (notElem var ts)                  = []
-    | otherwise                         = findColumn var (Table ts cs)
-    
-findColumns :: [Var] -> Table -> [[String]]
-findColumns vars table = [ k | a <- vars, let k = findColumn a table]
-    
-findNotColumn :: Var -> Table -> Table
-findNotColumn var (Table ts cs) = (Table [a | a <- ts, a /= var] (findNotColumn' var (Table ts cs)))
-
-findNotColumn' :: Var -> Table -> [[String]]
-findNotColumn' _ (Table [] []) = []
-findNotColumn' var (Table (t:ts) (c:cs)) 
-    | (var == t)    = findNotColumn' var (Table ts cs)
-    | otherwise     = [c] ++ findNotColumn' var (Table ts cs)
-    
-findNotColumns :: [Var] -> Table -> Table
-findNotColumns vars table = foldr findNotColumn table vars
-    
-splitOnColumn :: Var -> Table -> (Table, Table)
-splitOnColumn var (Table ts cs) = ((Table leftTitles leftColumns),(Table rightTitles rightColumns))
-    where splitIndex = getTitleIndex var (Table ts cs)
-          splitTitles = splitAt splitIndex ts
-          splitColumns = splitAt splitIndex cs
-          leftTitles = fst splitTitles
-          rightTitles = tail (snd splitTitles)
-          leftColumns = fst splitColumns
-          rightColumns = tail (snd splitColumns)
-          
-getTitleIndex :: Var -> Table -> Int
-getTitleIndex _ (Table [] []) = 0 -- TODO: Handle properly?
-getTitleIndex var (Table (t:ts) (c:cs))
-    | var == t      = 0
-    | otherwise     = 1 + getTitleIndex var (Table ts cs)
-    
-getMatchingRows :: [Var] -> [Var] -> Table -> [[String]]
-getMatchingRows keyVars keyTitles table = getMatchingRows' keyVars keyRows otherRows
-                where keyColumns = findColumns keyTitles table
-                      otherColumns = getColumns(findNotColumns keyTitles table )
-                      keyRows = transpose keyColumns
-                      otherRows = transpose otherColumns
-    
-getMatchingRows' :: [Var] -> [[String]] -> [[String]] -> [[String]]
-getMatchingRows' _ [] [] = []
-getMatchingRows' ks (kv:kvs) (r:rs)
-    | ks == kv   = [kv ++ r] ++ getMatchingRows' ks kvs rs
-    | otherwise = getMatchingRows' ks kvs rs
-getMatchingRows' _ _ _ = [] --If all variables are in key variables
-    
---getMatchingRows :: Var -> Var -> Table -> [[String]]
---getMatchingRows varName titleName (Table titles columns)
---    | notElem titleName titles = (Table titles [])
---    | otherwise                = (getMatchingRows' varName varColumn (transpose leftColumns) (transpose rightColumns))
---    where split = splitOnColumn varName (Table titles columns)
---          leftColumns = getColumns(fst split)
---          rightColumns = getColumns(snd split)
---          varColumn = findColumn varName (Table titles columns)         
-          
---getMatchingRows' :: Var -> [String] -> [[String]] -> [[String]] -> [[String]]
---getMatchingRows' _  [] [] [] = []
---getMatchingRows' var (c:cs) (l:ls) (r:rs) --Left and right of column to match
---    | var == c      = [l ++ [c] ++ r] ++ getMatchingRows' var cs ls rs
---    | otherwise     = getMatchingRows' var cs ls rs
-
-transpose :: [[a]] -> [[a]]
-transpose [] = []
-transpose xs 
-    | length (head xs) >1 = [(map head xs)] ++ transpose (map tail xs)
-    | otherwise = [(map head xs)]
 
 
 -----------------------------------------------------------------
