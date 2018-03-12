@@ -25,7 +25,7 @@ import Control.Exception
 
 -- TODO: Check associativity
 %right '.' -- In what event does changing this even do anything?
-%right '^' -- maybe left?
+%left '^'
 %%
 
 -- Parser start: expect 0+ imports and 0+ queries
@@ -104,14 +104,14 @@ data Prog  = Prog
            }
           deriving (Eq, Show)
 
-type Path  = String
+type Path    = String
 type TableID = String 
-type Vars  = [ Var ] 
-type Var   = String
+type Vars    = [ Var ] 
+type Var     = String
 
 type Imports = [ Import ]
-data Import = Import Path TableID
-            deriving (Eq, Show)
+data Import  = Import Path TableID
+               deriving (Eq, Show)
  
 type Queries = [ Query ]
 data Query = Query Vars Exp
