@@ -9,7 +9,7 @@ import System.Exit
 
 main :: IO ()
 main =   do 
-  dat <- readFile "test_files/test5.txt"
+  dat <- readFile "test_files/test3.txt"
   -- Lex input into tokens
   let lexerResult = lexString dat
   exitIfError lexerResult

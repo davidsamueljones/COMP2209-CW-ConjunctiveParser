@@ -23,7 +23,6 @@ testTable7 = (Table ["x2","x3"] [["2","2"],["1","1"]])
 --runInterpreter :: Show a => Prog -> [a]
 --runInterpreter ast = []
 
-
 interpretConjunction :: Table -> Table -> Table
 interpretConjunction (Table titlesA columnsA) (Table titlesB columnsB)
 --    | elementsOverlap titlesA titlesB   = (Table (titlesA ++ titlesB) (transpose ([rowA ++ [c] ++ rowB |     
