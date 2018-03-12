@@ -17,11 +17,15 @@ data Env  = Env
           deriving Show
 
 
-data BaseTable   = BaseTable TableID [[String]] deriving (Show)
-data QueryResult = QueryResult Int ColumnTable deriving (Show) -- maybe row table?
 
+type Table       = [[String]]
 type ColumnTable = [Column]
 type RowTable    = [Row]
+
+data QueryResult = QueryResult TableID Table deriving (Show)
+data BaseTable   = BaseTable TableID Table deriving (Show)
+
+
 
 data Column = Column
             {
@@ -32,11 +36,11 @@ data Column = Column
             
 data Row  = Row
           {
-            columnIDs :: [Var],
+            columnIDs :: Vars,
             rowData :: [String]
           }
           deriving Show
-            
+       
 testColumn= [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
 testColumn1= [(Column "x3" ["Julian"]),(Column "x4" ["Rakthe"])]
 
@@ -46,10 +50,76 @@ testColumn3= [(Column "x3" ["3","3"]),(Column "x4" ["4","4"])]
 testColumn4= [(Column "x1" ["1","1"]),(Column "x2" ["3","2"])]
 testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
 
+-- Empty environment definition
+initEnv :: Env
+initEnv = Env [] [] [] []
 
--- TODO: Just ya know, write this thing?
---runInterpreter :: Show a => Prog -> [a]
---runInterpreter ast = []
+
+-----------------------------------------------------------------
+-- Interpreter Control
+-----------------------------------------------------------------
+
+-- Process a program, starting with imports and then queries
+-- This is built up in a global environment so all queries have
+-- knowledge of all base tables and all queries have knowledge
+-- of previous queries FIXME: Implement that bit if time
+runInterpreter :: Prog -> IO (Either InterException String)
+runInterpreter (Prog is qs) = do
+  -- Initiate environment with imported base tables
+  resImports <- evalImports initEnv is
+  case resImports of
+    Left e -> throw e -- rethrow up stack
+    Right envImports -> do
+      -- No import errors, do queries
+      resQueries <- evalQueries envImports qs 0
+      return $ Right (show resQueries) 
+
+-- Process imports by importing data and creating base tables
+-- in environment
+evalImports :: Env -> Imports -> IO (Either InterException Env)
+evalImports env []     =  return (Right env)
+evalImports env (t:ts) = case t of
+  Import p i -> do
+    res <- importTable p
+    case res of
+      Left e -> throw e -- rethrow up stack
+      Right dat -> do
+        let imported = BaseTable i dat
+        let updatedEnv = env {baseTables = (imported:(baseTables env))}
+        evalImports updatedEnv ts
+
+-- Process queries, placing result tables in environment
+evalQueries :: Env -> Queries -> Int -> IO (Either InterException Env) 
+evalQueries env []     _ = return (Right env)
+evalQueries env (q:qs) i = do
+    res <- evalQuery env q
+    case res of
+      Left e -> throw e -- rethrow up stack
+      Right table -> do
+        let query = QueryResult (show i) table
+        let updatedEnv = env {queries = (query:(queries env))}
+        evalQueries updatedEnv qs (i+1)
+
+-- Process query, returning created table in column form
+evalQuery :: Env -> Query -> IO (Either InterException Table)
+evalQuery env (Query vs e) = do
+  res <- evalExp env e
+  case res of 
+    Left e -> throw e -- rethrow up stack
+    Right env' -> do
+      let table = makeOutputTable (tableState env')
+      return (Right table)
+
+-- Process expression, updating environment respectively -- FIXME
+evalExp :: Env -> Exp -> IO (Either InterException Env) 
+evalExp env e = let updatedEnv = env {tableState = [Column "x1" ["1", "2", "3"], Column "x2" ["a", "b", "c"]]} in return (Right updatedEnv)
+
+-- TODO: 
+-- * Conjunction like thing of variables and table (taking away bound variables)
+-- * Throw errors for: * LHS free variables not using all free variables
+--                     * LHS has bound variables in
+makeOutputTable :: ColumnTable -> Table
+makeOutputTable table = colStringArr table
 
 -----------------------------------------------------------------
 -- Conjunction & Equality???
@@ -97,7 +167,7 @@ removeDupCols (x:xs)
 -- Convert a table in column form into row form 
 transposeCol :: ColumnTable -> RowTable
 transposeCol t = transposeCol' (map columnID t) (map columnData t)
-transposeCol' :: Vars -> [[String]] -> RowTable
+transposeCol' :: Vars -> Table -> RowTable
 transposeCol' _ [] = []
 transposeCol' ids columns 
   | (length $ head columns) > 1 = [(Row ids row)] ++ transposeCol' ids tailColumns
@@ -108,7 +178,7 @@ transposeCol' ids columns
 -- Convert a table in row form into column form 
 transposeRow :: RowTable -> ColumnTable
 transposeRow (t:ts) = transposeRow' (columnIDs t) (map rowData (t:ts))
-transposeRow' :: Vars -> [[String]] -> ColumnTable
+transposeRow' :: Vars -> Table -> ColumnTable
 transposeRow' _ [] = []
 transposeRow' (x:xs) rows
   | xs == []  = [(Column x column)]
@@ -117,10 +187,10 @@ transposeRow' (x:xs) rows
         tailRows = map tail rows
 
 -- Convert a column table to 
-colStringArr :: ColumnTable -> [[String]]
+colStringArr :: ColumnTable -> Table
 colStringArr t = map columnData t
 
-rowStringArr :: RowTable -> [[String]]
+rowStringArr :: RowTable -> Table
 rowStringArr t = map rowData t
 
 -----------------------------------------------------------------
@@ -137,7 +207,6 @@ importTable f = do
       -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
       let tokenise = map (parseCSVLine) . lines
       return (multiZip' $ tokenise dat)
-
 
 -----------------------------------------------------------------
 -- 'Simple' CSV Line Parser
