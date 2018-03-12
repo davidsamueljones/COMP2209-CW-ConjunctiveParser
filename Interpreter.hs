@@ -7,23 +7,35 @@ import System.Exit
 import Data.List
 import Data.Maybe 
 
-type ColumnTable = [Column] 
-type RowTable = [Row]
-type ColumnData = [String]
-type RowData = [String]
-type ColumnID = Var
+data Env  = Env 
+          {
+            baseTables  :: [BaseTable],
+            queries     :: [QueryResult], 
+            tableState  :: ColumnTable,
+            boundedVars :: Vars
+          }
+          deriving Show
+
+
+data BaseTable   = BaseTable TableID [[String]] deriving (Show)
+data QueryResult = QueryResult Int ColumnTable deriving (Show) -- maybe row table?
+
+type ColumnTable = [Column]
+type RowTable    = [Row]
 
 data Column = Column
             {
-               columnID :: ColumnID,
-               columnData :: ColumnData
-            } deriving Show
+               columnID :: Var,
+               columnData :: [String]
+            }
+            deriving Show
             
-data Row = Row
-            {
-               columnIDs :: [ColumnID],
-               rowData :: RowData
-            } deriving Show
+data Row  = Row
+          {
+            columnIDs :: [Var],
+            rowData :: [String]
+          }
+          deriving Show
             
 testColumn= [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
 testColumn1= [(Column "x3" ["Julian"]),(Column "x4" ["Rakthe"])]
@@ -34,30 +46,26 @@ testColumn3= [(Column "x3" ["3","3"]),(Column "x4" ["4","4"])]
 testColumn4= [(Column "x1" ["1","1"]),(Column "x2" ["3","2"])]
 testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
 
---testTable1 = (Column["x3","x4"] [["Julian"],["Rathke"]])
---testTable2 = (Column["x1","x2"] [["1","1"],["2","2"]])
---testTable3 = (Column["x3","x4"] [["3","3"],["4","4"]])
---testTable4 = (Column["x1","x2"] [["1","1"],["3","2"]])
---testTable5 = (Column["x2","x3"] [["3","3","2"],["1","2","2"]])
---testTable6 = (Column["x1","x2"] [["1","1"],["2","2"]])
---testTable7 = (Column["x2","x3"] [["2","2"],["1","1"]])
 
 -- TODO: Just ya know, write this thing?
 --runInterpreter :: Show a => Prog -> [a]
 --runInterpreter ast = []
 
+-----------------------------------------------------------------
+-- Conjunction & Equality???
+-----------------------------------------------------------------
 
 conjunction :: ColumnTable -> ColumnTable -> ColumnTable
 conjunction c1 c2 = removeDupCols $ transposeRow combined
-                  where r1 = transposeCol c1
-                        r2 = transposeCol c2
-                        ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
-                        vars = getDupCols ids
-                        combined = [(Row ids (rowData a ++ rowData b))| a <- r1, b <- r2, sameVars vars a b]
+  where r1 = transposeCol c1
+        r2 = transposeCol c2
+        ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
+        vars = getDupCols ids
+        combined = [(Row ids (rowData a ++ rowData b))| a <- r1, b <- r2, sameVars vars a b]
                      
 combine :: RowTable -> RowTable -> RowTable
 combine r1 r2 = [(Row ids (a ++ b))| a <- map rowData r1, b <- map rowData r2]
-              where ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
+  where ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
                         
 sameVars :: [Var] -> Row -> Row -> Bool
 sameVars vars row1 row2 = foldr (&&) True [a | b <- vars, let a = sameVar b row1 row2]
@@ -70,12 +78,14 @@ getVar var (Row columnIDs rowData)
   | elem var columnIDs = rowData !! fromJust (elemIndex var columnIDs)
   | otherwise          = error ("getVar called with no element")--TODO Exception
  
-getDupCols :: [ColumnID] -> Vars
+-- Find columns with the same ID (var name)
+getDupCols :: Vars -> Vars
 getDupCols [] = []
 getDupCols (x:xs)
     | elem x xs = [x] ++ getDupCols xs
     | otherwise = getDupCols xs
 
+-- Remove columns with the same ID (var name)
 removeDupCols :: ColumnTable -> ColumnTable
 removeDupCols [] = []
 removeDupCols (x:xs)
@@ -84,34 +94,34 @@ removeDupCols (x:xs)
   where idList = map columnID xs
         id = columnID x
 
+-- Convert a table in column form into row form 
 transposeCol :: ColumnTable -> RowTable
 transposeCol t = transposeCol' (map columnID t) (map columnData t)
-transposeCol' :: [ColumnID] -> [[String]] -> RowTable
+transposeCol' :: Vars -> [[String]] -> RowTable
 transposeCol' _ [] = []
 transposeCol' ids columns 
   | (length $ head columns) > 1 = [(Row ids row)] ++ transposeCol' ids tailColumns
   | otherwise          = [(Row ids row)]
-
   where row = map head columns
         tailColumns = map tail columns
-  
+
+-- Convert a table in row form into column form 
 transposeRow :: RowTable -> ColumnTable
 transposeRow (t:ts) = transposeRow' (columnIDs t) (map rowData (t:ts))
-transposeRow' :: [ColumnID] -> [[String]] -> ColumnTable
+transposeRow' :: Vars -> [[String]] -> ColumnTable
 transposeRow' _ [] = []
 transposeRow' (x:xs) rows
   | xs == []  = [(Column x column)]
-  | otherwise =[(Column x column)] ++ transposeRow' xs tailRows
+  | otherwise = [(Column x column)] ++ transposeRow' xs tailRows
   where column = map head rows
         tailRows = map tail rows
 
+-- Convert a column table to 
 colStringArr :: ColumnTable -> [[String]]
 colStringArr t = map columnData t
 
 rowStringArr :: RowTable -> [[String]]
 rowStringArr t = map rowData t
-
-
 
 -----------------------------------------------------------------
 -- Table Importer
@@ -120,13 +130,13 @@ rowStringArr t = map rowData t
 -- Imports a csv file into zipped columns
 importTable :: FilePath -> IO (Either InterException [[String]])
 importTable f = do 
-    res <- try $ readFile f :: IO (Either IOError String)
-    case res of
-      Left e -> throw (InterExceptionImport e)
-      Right dat -> do
-        -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
-        let tokenise = map (parseCSVLine) . lines
-        return (multiZip' $ tokenise dat)
+  res <- try $ readFile f :: IO (Either IOError String)
+  case res of
+    Left e -> throw (InterExceptionImport e)
+    Right dat -> do
+      -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
+      let tokenise = map (parseCSVLine) . lines
+      return (multiZip' $ tokenise dat)
 
 
 -----------------------------------------------------------------
@@ -197,8 +207,8 @@ multiZip' xss | otherwise       = throw InterExceptionZip
 multiZip :: [[a]] -> [[a]]
 multiZip xss | maxListLen xss == 0 = []
 multiZip xss = foldl (++) [] line : multiZip rest
-    where line = map (take 1) xss
-          rest = map (drop 1) xss
+  where line = map (take 1) xss
+        rest = map (drop 1) xss
 
 -- Find the longest row in a list
 maxListLen :: [[a]] -> Int
@@ -211,7 +221,6 @@ allLensSame xss = allValsSame $ map length xss
 -- True if all values in list are equal 
 allValsSame :: Eq a =>[a] -> Bool
 allValsSame xs = all (== head xs) (tail xs)
-
 
 -----------------------------------------------------------------
 -- Interpreter Exceptions
