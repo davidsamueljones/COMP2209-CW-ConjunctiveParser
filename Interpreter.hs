@@ -47,7 +47,7 @@ testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
 --runInterpreter ast = []
 
 
-conjunction :: [Column] -> [Column] -> [Column]
+conjunction :: ColumnTable -> ColumnTable -> ColumnTable
 conjunction c1 c2 = removeDupCols $ transposeRow combined
                   where r1 = transposeCol c1
                         r2 = transposeCol c2
@@ -55,7 +55,7 @@ conjunction c1 c2 = removeDupCols $ transposeRow combined
                         vars = getDupCols ids
                         combined = [(Row ids (rowData a ++ rowData b))| a <- r1, b <- r2, sameVars vars a b]
                      
-combine :: [Row] -> [Row] -> [Row]
+combine :: RowTable -> RowTable -> RowTable
 combine r1 r2 = [(Row ids (a ++ b))| a <- map rowData r1, b <- map rowData r2]
               where ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
                         
@@ -70,13 +70,13 @@ getVar var (Row columnIDs rowData)
   | elem var columnIDs = rowData !! fromJust (elemIndex var columnIDs)
   | otherwise          = error ("getVar called with no element")--TODO Exception
  
-getDupCols :: [ColumnID] -> [Var]
+getDupCols :: [ColumnID] -> Vars
 getDupCols [] = []
 getDupCols (x:xs)
     | elem x xs = [x] ++ getDupCols xs
     | otherwise = getDupCols xs
 
-removeDupCols :: [Column] -> [Column]
+removeDupCols :: ColumnTable -> ColumnTable
 removeDupCols [] = []
 removeDupCols (x:xs)
   | elem id idList = removeDupCols xs
@@ -84,9 +84,9 @@ removeDupCols (x:xs)
   where idList = map columnID xs
         id = columnID x
 
-transposeCol :: [Column] -> [Row]
+transposeCol :: ColumnTable -> RowTable
 transposeCol t = transposeCol' (map columnID t) (map columnData t)
-transposeCol' :: [ColumnID] -> [[String]] -> [Row]
+transposeCol' :: [ColumnID] -> [[String]] -> RowTable
 transposeCol' _ [] = []
 transposeCol' ids columns 
   | (length $ head columns) > 1 = [(Row ids row)] ++ transposeCol' ids tailColumns
@@ -95,9 +95,9 @@ transposeCol' ids columns
   where row = map head columns
         tailColumns = map tail columns
   
-transposeRow :: [Row] -> [Column]
+transposeRow :: RowTable -> ColumnTable
 transposeRow (t:ts) = transposeRow' (columnIDs t) (map rowData (t:ts))
-transposeRow' :: [ColumnID] -> [[String]] -> [Column]
+transposeRow' :: [ColumnID] -> [[String]] -> ColumnTable
 transposeRow' _ [] = []
 transposeRow' (x:xs) rows
   | xs == []  = [(Column x column)]
@@ -105,10 +105,10 @@ transposeRow' (x:xs) rows
   where column = map head rows
         tailRows = map tail rows
 
-colStringArr :: [Column] -> [[String]]
+colStringArr :: ColumnTable -> [[String]]
 colStringArr t = map columnData t
 
-rowStringArr :: [Row] -> [[String]]
+rowStringArr :: RowTable -> [[String]]
 rowStringArr t = map rowData t
 
 
