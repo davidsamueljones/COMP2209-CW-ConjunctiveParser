@@ -22,3 +22,6 @@ cabal.project.local
 # Compiled Alex + Happy files
 Tokens.hs
 Grammar.hs
+
+# Compiled interpreter
+myinterpreter

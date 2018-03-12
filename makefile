@@ -8,8 +8,10 @@ Grammar.hs : Grammar.y
 	happy Grammar.y
 
 Main : Main.hs Tokens.hs Grammar.hs 
-	ghci Main.hs -e main
+	ghc -o myinterpreter Main.hs
+	./myinterpreter
 
 clean:
+	rm -f *.hi *.o
 	rm -f Tokens.hs
 	rm -f Grammar.hs
