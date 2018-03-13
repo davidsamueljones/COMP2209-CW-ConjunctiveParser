@@ -18,7 +18,7 @@ data Env  = Env
             baseTables  :: [TableStore],
             queries     :: [TableStore], 
             tableState  :: ColumnTable,
-            boundedVars :: Vars
+            boundVars   :: Vars
           }
           deriving Show
 
@@ -36,9 +36,9 @@ data Column = Column { columnID :: Var, columnData :: [String] }
             deriving (Show, Eq)
 
 -- Table held in row form (with column variables)
-type RowTable    = [Row]     
-data Row    = Row    { columnIDs :: Vars, rowData :: [String] }
-            deriving (Show, Eq)
+type RowTable = [Row]     
+data Row = Row { columnIDs :: Vars, rowData :: [String] }
+         deriving (Show, Eq)
 
 -----------------------------------------------------------------
 -- Interpreter Control
@@ -115,7 +115,7 @@ evalExp env e = case e of
             let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
             let newEnv = rEnv {tableState = joinedTable} 
             return (Right newEnv)
-
+            
   Equality v1 v2 -> do -- TODO: Test on input
     let currentTable = tableState env 
     let newTable = equality currentTable v1 v2
@@ -137,7 +137,15 @@ evalExp env e = case e of
             let newEnv = env {tableState = table}
             return (Right newEnv)
 
-  ExQual vs e -> return (Right env) -- TODO
+  ExQual vs e -> do
+    let res = addBoundVariables vs env
+    case res of
+      Left e -> throw e -- rethrow up stack
+      Right envWithBounds -> do
+        res' <- evalExp envWithBounds e
+        case res' of
+          Left e -> throw e -- rethrow up stack
+          Right newEnv -> return (Right newEnv)
 
 
 -- TODO: 
@@ -150,8 +158,14 @@ makeOutputTable :: Vars -> ColumnTable -> Table
 makeOutputTable vs table = rowStringArr $ col2row table
 
 
-addBoundedVariables :: Vars -> Env -> (Either InterException Env)
-addBoundedVariables vs env = Right env
+addBoundVariables :: Vars -> Env -> (Either InterException Env)
+addBoundVariables []     env = Right (env)
+addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
+  Nothing ->  case (find (== v) []) of -- FIXME Make check use column headings
+                Nothing -> let newEnv = env {boundVars = (v:(boundVars env))} in
+                           addBoundVariables vs newEnv
+                Just _  -> throw IEVarExistsNotBound
+  Just _  ->  throw IEVarAlreadyBound 
 
 -----------------------------------------------------------------
 -- Equality
@@ -367,6 +381,8 @@ data InterException = IEImport InterException
                     | IETooManyVars
                     | IENotEnoughVars
                     | IEVarNotFound
+                    | IEVarAlreadyBound
+                    | IEVarExistsNotBound
                     | IEUnknown
                     deriving (Show)
 
