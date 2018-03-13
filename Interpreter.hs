@@ -1,7 +1,8 @@
 module Interpreter where
 import Grammar
+import Helpers
+
 import Control.Exception
-import Data.Either
 import Control.Monad
 import System.Exit  
 import Data.List
@@ -9,8 +10,8 @@ import Data.Maybe
 
 data Env  = Env 
           {
-            baseTables  :: [BaseTable],
-            queries     :: [QueryResult], 
+            baseTables  :: [TableStore],
+            queries     :: [TableStore], 
             tableState  :: ColumnTable,
             boundedVars :: Vars
           }
@@ -22,8 +23,8 @@ type Table       = [[String]]
 type ColumnTable = [Column]
 type RowTable    = [Row]
 
-data QueryResult = QueryResult TableID Table deriving (Show)
-data BaseTable   = BaseTable TableID Table deriving (Show)
+
+data TableStore  = TableStore TableID Table deriving (Show, Eq)
 
 
 
@@ -32,16 +33,16 @@ data Column = Column
                columnID :: Var,
                columnData :: [String]
             }
-            deriving Show
+            deriving (Show, Eq)
             
 data Row  = Row
           {
             columnIDs :: Vars,
             rowData :: [String]
           }
-          deriving Show
+          deriving (Show, Eq)
        
-testColumn= [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
+testColumn=  [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
 testColumn1= [(Column "x3" ["Julian"]),(Column "x4" ["Rakthe"])]
 
 testColumn2= [(Column "x1" ["1","1"]),(Column "x2" ["3","3"])]
@@ -49,6 +50,9 @@ testColumn3= [(Column "x3" ["3","3"]),(Column "x4" ["4","4"])]
 
 testColumn4= [(Column "x1" ["1","1"]),(Column "x2" ["3","2"])]
 testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
+
+testColumn6= [(Column "x1" ["Sofiane","Tadic","Guido"]),(Column "x2" ["Boufal","Tadic","Carillo"])]
+testColumn7= [(Column "x2" ["Boufal","Carillo"]),(Column "x3" ["Maserati","Ferrari"])]
 
 -- Empty environment definition
 initEnv :: Env
@@ -72,7 +76,7 @@ runInterpreter (Prog is qs) = do
     Right envImports -> do
       -- No import errors, do queries
       resQueries <- evalQueries envImports qs 0
-      return $ Right (show resQueries) 
+      return $ Right (show $ queries $ fromRight initEnv resQueries) 
 
 -- Process imports by importing data and creating base tables
 -- in environment
@@ -84,7 +88,7 @@ evalImports env (t:ts) = case t of
     case res of
       Left e -> throw e -- rethrow up stack
       Right dat -> do
-        let imported = BaseTable i dat
+        let imported = TableStore i dat
         let updatedEnv = env {baseTables = (imported:(baseTables env))}
         evalImports updatedEnv ts
 
@@ -96,7 +100,7 @@ evalQueries env (q:qs) i = do
     case res of
       Left e -> throw e -- rethrow up stack
       Right table -> do
-        let query = QueryResult (show i) table
+        let query = TableStore (show i) table
         let updatedEnv = env {queries = (query:(queries env))}
         evalQueries updatedEnv qs (i+1)
 
@@ -107,22 +111,55 @@ evalQuery env (Query vs e) = do
   case res of 
     Left e -> throw e -- rethrow up stack
     Right env' -> do
-      let table = makeOutputTable (tableState env')
+      putStrLn $ show $ tableState env'
+      let table = makeOutputTable vs (tableState env')
       return (Right table)
 
--- Process expression, updating environment respectively -- FIXME
+-- Process expression, updating environment respectively -- FIXME FINISH
 evalExp :: Env -> Exp -> IO (Either InterException Env) 
-evalExp env e = let updatedEnv = env {tableState = [Column "x1" ["1", "2", "3"], Column "x2" ["a", "b", "c"]]} in return (Right updatedEnv)
+evalExp env e = case e of
+
+  Conjunction lExp rExp -> do
+    lRes <- evalExp env lExp
+    case lRes of 
+      Left e -> throw e -- rethrow up stack
+      Right lEnv -> do
+        rRes <- evalExp lEnv rExp
+        case rRes of 
+          Left e -> throw e -- rethrow up stack
+          Right rEnv -> do
+            let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
+            let newEnv = rEnv {tableState = joinedTable} 
+            return (Right newEnv)
+
+  Equality v1 v2 -> return (Right env) -- TODO
+
+  Lookup t vs -> do
+    let res = lookupTableData t (baseTables env)
+    case res of
+      Left e -> throw e -- rethrow up stack
+      Right dat -> do 
+        let res' = assignColumnVars vs dat
+        case res' of
+          Left e -> throw e -- rethrow up stack
+          Right table -> do 
+            let newEnv = env {tableState = table}
+            return (Right newEnv)
+
+  ExQual vs e -> return (Right env) -- TODO
+
 
 -- TODO: 
 -- * Conjunction like thing of variables and table (taking away bound variables)
+-- * Sort lexicographically?
+-- * Order as outputs
 -- * Throw errors for: * LHS free variables not using all free variables
 --                     * LHS has bound variables in
-makeOutputTable :: ColumnTable -> Table
-makeOutputTable table = colStringArr table
+makeOutputTable :: Vars -> ColumnTable -> Table
+makeOutputTable vs table = colStringArr table
 
 -----------------------------------------------------------------
--- Conjunction & Equality???
+-- Conjunction
 -----------------------------------------------------------------
 
 conjunction :: ColumnTable -> ColumnTable -> ColumnTable
@@ -177,6 +214,7 @@ transposeCol' ids columns
 
 -- Convert a table in row form into column form 
 transposeRow :: RowTable -> ColumnTable
+transposeRow [] = []
 transposeRow (t:ts) = transposeRow' (columnIDs t) (map rowData (t:ts))
 transposeRow' :: Vars -> Table -> ColumnTable
 transposeRow' _ [] = []
@@ -186,12 +224,31 @@ transposeRow' (x:xs) rows
   where column = map head rows
         tailRows = map tail rows
 
--- Convert a column table to 
+-- Convert a column table to a normal table
 colStringArr :: ColumnTable -> Table
 colStringArr t = map columnData t
 
+-- Convert a row table to a normal table
 rowStringArr :: RowTable -> Table
 rowStringArr t = map rowData t
+
+-----------------------------------------------------------------
+-- Lookup
+-----------------------------------------------------------------
+
+lookupTableData :: Var -> [TableStore] -> (Either InterException Table) 
+lookupTableData x []                      = throw $ IETableNotFound x
+lookupTableData x ((TableStore y dat):ts) | x == y    = Right dat
+lookupTableData x (_:ts)                  | otherwise = lookupTableData x ts
+
+assignColumnVars :: Vars -> Table -> (Either InterException ColumnTable)
+assignColumnVars = assignColumnVars' []
+
+assignColumnVars' :: ColumnTable -> Vars -> Table -> (Either InterException ColumnTable)
+assignColumnVars' os []     []     = Right os
+assignColumnVars' _  []     _      = throw IETooManyVars
+assignColumnVars' _  _      []     = throw IENotEnoughVars
+assignColumnVars' os (v:vs) (t:ts) = assignColumnVars' ((Column v t):os) vs ts
 
 -----------------------------------------------------------------
 -- Table Importer
@@ -202,10 +259,10 @@ importTable :: FilePath -> IO (Either InterException [[String]])
 importTable f = do 
   res <- try $ readFile f :: IO (Either IOError String)
   case res of
-    Left e -> throw (InterExceptionImport e)
+    Left e -> throw (IEImport e)
     Right dat -> do
       -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
-      let tokenise = map (parseCSVLine) . lines
+      let tokenise = map parseCSVLine . lines
       return (multiZip' $ tokenise dat)
 
 -----------------------------------------------------------------
@@ -224,7 +281,7 @@ importTable f = do
 -- arrays are rejoined. Not speed efficient but probably better... 
 
 parseCSVLine :: String -> [String]
-parseCSVLine xs = processEscapes (csvSplit xs) csvEscapes 
+parseCSVLine xs = processEscapes (map trim (csvSplit xs)) csvEscapes 
 
 csvSplit :: String -> [ String ]
 csvSplit [] = []
@@ -264,13 +321,13 @@ replace x y xs = xs
 -- ^^^ Data.String.Utils
 
 -----------------------------------------------------------------
--- Rows -> Columns
+-- Multi-zip
 -----------------------------------------------------------------
 
 -- Zip rows into column lists, failing if columns are not all equal length
 multiZip' :: [[a]] -> Either InterException [[a]]
 multiZip' xss | allLensSame xss = Right (multiZip xss)
-multiZip' xss | otherwise       = throw InterExceptionZip
+multiZip' xss | otherwise       = throw IEZip
 
 -- Zip rows into column lists
 multiZip :: [[a]] -> [[a]]
@@ -294,8 +351,11 @@ allValsSame xs = all (== head xs) (tail xs)
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
-data InterException = InterExceptionZip
-                    | InterExceptionImport IOError
+data InterException = IEZip
+                    | IEImport IOError
+                    | IETableNotFound TableID
+                    | IETooManyVars
+                    | IENotEnoughVars
                     deriving (Show)
 
 instance Exception InterException
