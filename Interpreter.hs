@@ -65,6 +65,7 @@ evalImports :: Env -> Imports -> IO (Either InterException Env)
 evalImports env []     =  return (Right env)
 evalImports env (t:ts) = case t of
   Import p i -> do
+    -- TODO: Error for table already exists
     res <- importTable p
     case res of
       Left e -> throw e -- rethrow up stack
@@ -140,6 +141,11 @@ evalExp env e = case e of
 --                     * LHS has bound variables in
 makeOutputTable :: Vars -> ColumnTable -> Table
 makeOutputTable vs table = rowStringArr $ col2row table
+
+
+addBoundedVariables :: Vars -> Env -> (Either InterException Env)
+addBoundedVariables vs env = Right env
+
 
 -----------------------------------------------------------------
 -- Conjunction
@@ -245,7 +251,7 @@ importTable :: FilePath -> IO (Either InterException [[String]])
 importTable f = do 
   res <- try $ readFile f :: IO (Either IOError String)
   case res of
-    Left e -> throw (IEImport e)
+    Left e -> throw (IEReadError e)
     Right dat -> do
       -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
       let tokenise = map parseCSVLine . lines
@@ -337,16 +343,18 @@ allValsSame xs = all (== head xs) (tail xs)
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
-data InterException = IEZip
-                    | IEImport IOError
+data InterException = IEImport InterException
+                    | IEQuery InterException
+                    | IEZip
+                    | IEReadError IOError
                     | IETableNotFound TableID
                     | IETooManyVars
                     | IENotEnoughVars
+                    | IEVarNotFound
+                    | IEUnknown
                     deriving (Show)
 
 instance Exception InterException
-
-
 
 -----------------------------------------------------------------
 -- TODO!!!
