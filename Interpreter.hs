@@ -255,6 +255,30 @@ importTable f = do
       return (transpose' $ tokenise dat)
 
 -----------------------------------------------------------------
+--Selecting vars from final table
+-----------------------------------------------------------------
+
+-- Gets the requested columns in the requested order, rows sorted lexicographically
+getColumns :: [Var] -> ColumnTable -> (Either InterException ColumnTable)
+getColumns xs cls
+  | length columns == length xs = Right columns
+  | otherwise                   = throw IEVarNotFound
+  where ids = map columnID cls
+        columns = lexiSort [fst colbool| a <- xs, let colbool = getColumn a cls, snd colbool == True]
+        
+getColumn :: Var -> ColumnTable -> (Column,Bool) --Represents successful or not
+getColumn _ [] = ((Column [] []),False)
+getColumn x (c:cs)
+  | x == columnID c = (c,True)
+  | otherwise       = getColumn x cs
+  
+lexiSort :: ColumnTable -> ColumnTable
+lexiSort a = row2col $ sorted
+           where rows = col2row a
+                 sorted = sortOn (\a -> concat $ rowData a) rows
+                 
+                 
+-----------------------------------------------------------------
 -- 'Simple' CSV Line Parser
 -----------------------------------------------------------------
 -- Allows for CSV lines to be split with any characters between commas; 
