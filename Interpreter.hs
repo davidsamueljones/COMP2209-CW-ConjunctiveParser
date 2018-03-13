@@ -116,7 +116,7 @@ evalExp env e = case e of
             let newEnv = rEnv {tableState = joinedTable} 
             return (Right newEnv)
             
-  Equality v1 v2 -> do -- TODO: Test on input
+  Equality v1 v2 -> do
     let currentTable = tableState env 
     let newTable = equality currentTable v1 v2
     case newTable of
@@ -158,26 +158,6 @@ evalExp env e = case e of
 makeOutputTable :: Vars -> ColumnTable -> Table
 makeOutputTable vs table = rowStringArr $ col2row table
 
-
-addBoundVariables :: Vars -> Env -> (Either InterException Env)
-addBoundVariables []     env = Right (env)
-addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
-  Nothing ->  case (find (== v) []) of -- FIXME Make check use column headings
-                Nothing -> let newEnv = env {boundVars = (v:(boundVars env))} in
-                           addBoundVariables vs newEnv
-                Just _  -> throw IEVarExistsNotBound
-  Just _  ->  throw IEVarAlreadyBound 
-
------------------------------------------------------------------
--- Equality
------------------------------------------------------------------
-
-equality :: ColumnTable -> Var -> Var -> Either InterException ColumnTable
-equality table v1 v2
-  | elem v1 ids && elem v2 ids = Right (row2col [a | a <- rows, getVar v1 a == getVar v2 a])
-  | otherwise                  = throw IEVarNotFound
-  where rows = col2row table
-        ids = map columnID table
 -----------------------------------------------------------------
 -- Conjunction
 -----------------------------------------------------------------
@@ -205,8 +185,34 @@ getVar var (Row columnIDs rowData)
   | elem var columnIDs = rowData !! fromJust (elemIndex var columnIDs)
   | otherwise          = ""
 
-safeGetVar :: Var -> Row -> (Either InterException Var)
-safeGetVar var (Row columnIDs rowData)= (Right "getVar called with no element") --TODO Exception - Correct functionality 
+-----------------------------------------------------------------
+-- Equality
+-----------------------------------------------------------------
+
+equality :: ColumnTable -> Var -> Var -> Either InterException ColumnTable
+equality table v1 v2
+  | elem v1 ids && elem v2 ids = Right (row2col [a | a <- rows, getVar v1 a == getVar v2 a])
+  | otherwise                  = throw IEVarNotFound
+  where rows = col2row table
+        ids = map columnID table
+
+-----------------------------------------------------------------
+-- Lookup
+-----------------------------------------------------------------
+
+lookupTableData :: Var -> [TableStore] -> (Either InterException Table) 
+lookupTableData x []                      = throw $ IETableNotFound x
+lookupTableData x ((TableStore y dat):ts) | x == y    = Right dat
+lookupTableData x (_:ts)                  | otherwise = lookupTableData x ts
+
+assignColumnVars :: Vars -> Table -> (Either InterException ColumnTable)
+assignColumnVars = assignColumnVars' []
+
+assignColumnVars' :: ColumnTable -> Vars -> Table -> (Either InterException ColumnTable)
+assignColumnVars' os []     []     = Right os
+assignColumnVars' _  []     _      = throw IENotEnoughVars
+assignColumnVars' _  _      []     = throw IETooManyVars
+assignColumnVars' os (v:vs) (t:ts) = assignColumnVars' ((Column v t):os) vs ts
 
 --Merges columns of a table in cases of repeated vars in columnIds)
 mergeColumns :: ColumnTable -> ColumnTable
@@ -220,6 +226,70 @@ mergeColumns cs
         repeatsAreEqual (x:xs) (y:ys)
           | elem x xs = (y == ys !! fromJust (elemIndex x xs)) && repeatsAreEqual xs ys
           | otherwise = repeatsAreEqual xs ys
+
+-----------------------------------------------------------------
+-- ExQual
+-----------------------------------------------------------------
+
+addBoundVariables :: Vars -> Env -> (Either InterException Env)
+addBoundVariables []     env = Right (env)
+addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
+  Nothing ->  case (find (== v) []) of -- FIXME Make check use column headings
+                Nothing -> let newEnv = env {boundVars = (v:(boundVars env))} in
+                           addBoundVariables vs newEnv
+                Just _  -> throw IEVarExistsNotBound
+  Just _  ->  throw IEVarAlreadyBound 
+
+-----------------------------------------------------------------
+-- Table Importer
+-----------------------------------------------------------------
+
+-- Imports a csv file into zipped columns
+importTable :: FilePath -> IO (Either InterException [[String]])
+importTable f = do 
+  res <- try $ readFile f :: IO (Either IOError String)
+  case res of
+    Left e -> throw (IEReadError e)
+    Right dat -> do
+      let tokenise = map parseCSVLine . lines
+      return (transpose' $ tokenise dat)
+
+-----------------------------------------------------------------
+-- 'Simple' CSV Line Parser
+-----------------------------------------------------------------
+-- Alternative to regex based approaches, which would be far 
+-- easier, yet require unavailable libraries. Allows for CSV lines
+-- to be split with any characters between commas; this includes
+-- commas provided they are escaped with a backslash. A backslash 
+-- exactly prior to a comma must be escaped by another backslash.
+
+parseCSVLine :: String -> [String]
+parseCSVLine xs = csvSplit xs 
+
+csvSplit :: String -> [ String ]
+csvSplit [] = []
+csvSplit xs = map trim (splitOnComma xs)
+
+splitOnComma :: String -> [String]
+splitOnComma xs = rejoinEscapes (splitOn "," xs)
+
+rejoinEscapes :: [String] -> [String]
+rejoinEscapes (xs1:xs2:xss) | wasCommaEscaped xs1 = rejoinEscapes ((replaceComma xs1 ++ xs2):xss)
+rejoinEscapes (xs1:xss)     | otherwise           = xs1 : rejoinEscapes xss
+rejoinEscapes (xss)         = xss
+
+replaceComma :: String -> String
+replaceComma xs = init xs ++ ","
+
+wasCommaEscaped :: String -> Bool
+wasCommaEscaped xs = wasCommaEscaped' (reverse xs) 
+wasCommaEscaped' []         = False
+wasCommaEscaped' (x1:x2:xs) = x1 == '\\' && x2 /= '\\'
+wasCommaEscaped' (x:xs)     = x == '\\'
+
+-----------------------------------------------------------------
+-- Helper Functions
+-----------------------------------------------------------------
 
 -- Find columns with the same ID (var name)
 getDupCols :: Vars -> Vars
@@ -268,90 +338,10 @@ colStringArr t = map columnData t
 rowStringArr :: RowTable -> Table
 rowStringArr t = map rowData t
 
------------------------------------------------------------------
--- Lookup
------------------------------------------------------------------
-
-lookupTableData :: Var -> [TableStore] -> (Either InterException Table) 
-lookupTableData x []                      = throw $ IETableNotFound x
-lookupTableData x ((TableStore y dat):ts) | x == y    = Right dat
-lookupTableData x (_:ts)                  | otherwise = lookupTableData x ts
-
-assignColumnVars :: Vars -> Table -> (Either InterException ColumnTable)
-assignColumnVars = assignColumnVars' []
-
-assignColumnVars' :: ColumnTable -> Vars -> Table -> (Either InterException ColumnTable)
-assignColumnVars' os []     []     = Right os
-assignColumnVars' _  []     _      = throw IENotEnoughVars
-assignColumnVars' _  _      []     = throw IETooManyVars
-assignColumnVars' os (v:vs) (t:ts) = assignColumnVars' ((Column v t):os) vs ts
-
------------------------------------------------------------------
--- Table Importer
------------------------------------------------------------------
-
--- Imports a csv file into zipped columns
-importTable :: FilePath -> IO (Either InterException [[String]])
-importTable f = do 
-  res <- try $ readFile f :: IO (Either IOError String)
-  case res of
-    Left e -> throw (IEReadError e)
-    Right dat -> do
-      -- FIXME: Does not allow commas in strings, can't use lookbehind due to POSIX regex -- (?<!\\)
-      let tokenise = map parseCSVLine . lines
-      return (multiZip' $ tokenise dat)
-
------------------------------------------------------------------
--- 'Simple' CSV Line Parser
------------------------------------------------------------------
--- Alternative to regex based approaches, which would be far 
--- easier, yet require unavailable libraries. Allows for CSV lines
--- to be split with any characters between commas; this includes
--- commas provided they are escaped with a backslash.
-
-parseCSVLine :: String -> [String]
-parseCSVLine xs = csvSplit xs 
-
-csvSplit :: String -> [ String ]
-csvSplit [] = []
-csvSplit xs = map trim (splitOnComma xs)
-
-splitOnComma :: String -> [String]
-splitOnComma xs = rejoinEscapes (splitOn "," xs)
-
-rejoinEscapes :: [String] -> [String]
-rejoinEscapes (xs1:xs2:xss) | wasCommaEscaped xs1 = rejoinEscapes ((replaceComma xs1 ++ xs2):xss)
-rejoinEscapes (xs1:xss)     | otherwise           = xs1 : rejoinEscapes xss
-rejoinEscapes (xss)         = xss
-
-replaceComma :: String -> String
-replaceComma xs = init xs ++ ","
-
-wasCommaEscaped :: String -> Bool
-wasCommaEscaped xs = wasCommaEscaped' (reverse xs) 
-wasCommaEscaped' []         = False
-wasCommaEscaped' (x1:x2:xs) = x1 == '\\' && x2 /= '\\'
-wasCommaEscaped' (x:xs)     = x == '\\'
-
------------------------------------------------------------------
--- Multi-zip
------------------------------------------------------------------
-
--- Zip rows into column lists, failing if columns are not all equal length
-multiZip' :: [[a]] -> Either InterException [[a]]
-multiZip' xss | allLensSame xss = Right (multiZip xss)
-multiZip' xss | otherwise       = throw IEZip
-
--- Zip rows into column lists
-multiZip :: [[a]] -> [[a]]
-multiZip xss | maxListLen xss == 0 = []
-multiZip xss = foldl (++) [] line : multiZip rest
-  where line = map (take 1) xss
-        rest = map (drop 1) xss
-
--- Find the longest row in a list
-maxListLen :: [[a]] -> Int
-maxListLen xss = maximum $ map length xss
+-- Transpose but fails if lists are not all equal length
+transpose' :: [[a]] -> Either InterException [[a]]
+transpose' xss | allLensSame xss = Right (transpose xss)
+transpose' xss | otherwise       = throw IEUnequalLists
 
 -- Get length of all rows, true if all equal
 allLensSame :: [[a]] -> Bool
@@ -366,7 +356,7 @@ allValsSame xs = all (== head xs) (tail xs)
 -----------------------------------------------------------------
 data InterException = IEImport InterException
                     | IEQuery InterException
-                    | IEZip
+                    | IEUnequalLists
                     | IEReadError IOError
                     | IETableNotFound TableID
                     | IETooManyVars
@@ -394,18 +384,6 @@ testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
 
 testColumn6= [(Column "x1" ["Sofiane","Tadic","Guido"]),(Column "x2" ["Boufal","Tadic","Carillo"])]
 testColumn7= [(Column "x2" ["Boufal","Carillo"]),(Column "x3" ["Maserati","Ferrari"])]
-
--- Our Rules:
--- * A variable that appears under the scope of an existential quantifier is 
---   said to be bound, otherwise it is free
--- * LHS of turnstile must have all free variables 
--- * Free variables must all be in the scope of at least one relation
-
--- Musings:
--- * Probably want either CEK or CESK interpreter, probably don't need store 
---   in CESK but who knows...
--- * Looks like breaking down into normal form a good idea?
--- * Use HashMap package for the environment?
 
 -- http://matt.might.net/articles/cek-machines/
 -- http://matt.might.net/articles/cesk-machines/
