@@ -7,7 +7,8 @@ import Control.Exception
 %name parseTokens
 %tokentype { Token }
 %error { parseError }
-%token      
+%token
+    '::'    { Token _ TAssign}
     ';'     { Token _ TSemicolon}
     ','     { Token _ TComma}
     '.'     { Token _ TDot}
@@ -19,6 +20,7 @@ import Control.Exception
     '$'     { Token _ TExQual}
     import  { Token _ TImport}
     as      { Token _ TAs}
+    print   { Token _ TPrint}
     VAR     { Token _ (TVar $$)}
     TABLE   { Token _ (TTable $$)}
     STRING  { Token _ (TString $$)}
@@ -29,20 +31,22 @@ import Control.Exception
 %%
 
 -- Parser start: expect 0+ imports and 0+ queries
-Prog     : Import Query                        { Prog $1 $2 }
+Prog     : Imports Stmts                        { Prog $1 $2 }
 
 -- Store imports as a list
-Import   : import STRING as TABLE ';' Import   { (Import $2 $4):$6 }
+Imports  : Import ';' Imports                  { $1:$3 } 
          | {- empty -}                         { [] }
+Import   : import STRING as TABLE              { (Import $2 $4) }
 
--- Store queries as a list
-Query    : Vars '<-' Exp ';' Query             { (Query $1 $3):$5 }
+Stmts    : Stmt ';' Stmts                      { $1:$3 }
          | {- empty -}                         { [] }
+Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just $1) $3 $5) }
+         | Vars '<-' Exp                       { (Query (Nothing) $1 $3) }
+         | print TABLE                         { (Print $2) }
 
 -- Store variables as a list
 Vars     : VAR MoreVars                        { $1:$2 }
          | {- empty -}                         { [] }
-
 MoreVars : ',' VAR MoreVars                    { $2:$3 }
          | {- empty -}                         { [] }
 
@@ -100,7 +104,7 @@ parseError p = throw (ParseException (tPosition (head p)))
 data Prog  = Prog
            {
              progImports  :: Imports,
-             progQueries  :: Queries
+             progStmts    :: Stmts
            }
           deriving (Eq, Show)
 
@@ -113,8 +117,9 @@ type Imports = [ Import ]
 data Import  = Import Path TableID
                deriving (Eq, Show)
  
-type Queries = [ Query ]
-data Query = Query Vars Exp
+type Stmts = [ Stmt ]
+data Stmt = Query (Maybe TableID) Vars Exp
+          | Print TableID
           deriving (Eq, Show)
           
 data Exp = Conjunction Exp Exp

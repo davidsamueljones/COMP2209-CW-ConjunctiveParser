@@ -33,6 +33,7 @@ tokens :-
   <strSC>   .                      { storeString  }  
 
   -- Language handling
+  <0>       \:\:                   { lexT  TAssign}
   <0>       \;                     { lexT  TSemicolon }
   <0>       \,                     { lexT  TComma }
   <0>       \.                     { lexT  TDot }
@@ -44,6 +45,7 @@ tokens :-
   <0>       \$                     { lexT  TExQual }
   <0>       import                 { lexT  TImport }
   <0>       as                     { lexT  TAs }
+  <0>       print                  { lexT  TPrint }
   <0>       $lower($alphanum|\_)*  { lexT' TVar }
   <0>       $upper($uppernum|\_)*  { lexT' TTable }
   
@@ -271,7 +273,8 @@ data Token  = Token
             deriving (Eq, Show)
 
 -- Types of token that can be lexed
-data TokenClass = TSemicolon        
+data TokenClass = TAssign
+                | TSemicolon        
                 | TComma             
                 | TDot             
                 | TEqual            
@@ -281,7 +284,8 @@ data TokenClass = TSemicolon
                 | TRParenthesis       
                 | TExQual           
                 | TImport        
-                | TAs               
+                | TAs
+                | TPrint               
                 | TVar String     
                 | TTable String    
                 | TString String   
