@@ -111,7 +111,7 @@ evalQuery env (Query vs e) = do
   case res of 
     Left e -> throw e -- rethrow up stack
     Right env' -> do
-      putStrLn $ show $ tableState env'
+      --putStrLn $ show $ tableState env'
       let table = makeOutputTable vs (tableState env')
       return (Right table)
 
@@ -124,7 +124,9 @@ evalExp env e = case e of
     case lRes of 
       Left e -> throw e -- rethrow up stack
       Right lEnv -> do
-        rRes <- evalExp env rExp
+        putStrLn $ show $ lEnv
+        rRes <- evalExp lEnv rExp --FIXME Environment will get corrupted if lEnv is sent but without it equality cannot work
+        putStrLn $ show $ rRes
         case rRes of 
           Left e -> throw e -- rethrow up stack
           Right rEnv -> do
