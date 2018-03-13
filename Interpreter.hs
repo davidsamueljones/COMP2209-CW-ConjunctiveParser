@@ -116,8 +116,15 @@ evalExp env e = case e of
             let newEnv = rEnv {tableState = joinedTable} 
             return (Right newEnv)
 
-  Equality v1 v2 -> return (Right env) -- TODO
-
+  Equality v1 v2 -> do -- TODO: Test on input
+    let currentTable = tableState env 
+    let newTable = equality currentTable v1 v2
+    case newTable of
+      Left e -> throw e -- throw up the stack (IEVarNotFound)
+      Right table -> do
+        let newEnv = env {tableState = table}
+        return (Right newEnv)
+    
   Lookup t vs -> do
     let res = lookupTableData t (baseTables env)
     case res of
@@ -146,7 +153,16 @@ makeOutputTable vs table = rowStringArr $ col2row table
 addBoundedVariables :: Vars -> Env -> (Either InterException Env)
 addBoundedVariables vs env = Right env
 
+-----------------------------------------------------------------
+-- Equality
+-----------------------------------------------------------------
 
+equality :: ColumnTable -> Var -> Var -> Either InterException ColumnTable
+equality table v1 v2
+  | elem v1 ids && elem v2 ids = Right (row2col [a | a <- rows, getVar v1 a == getVar v2 a])
+  | otherwise                  = throw IEVarNotFound
+  where rows = col2row table
+        ids = map columnID table
 -----------------------------------------------------------------
 -- Conjunction
 -----------------------------------------------------------------
