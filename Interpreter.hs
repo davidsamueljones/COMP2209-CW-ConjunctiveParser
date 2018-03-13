@@ -186,7 +186,7 @@ getVar var (Row columnIDs rowData)
   | otherwise          = ""
 
 safeGetVar :: Var -> Row -> (Either InterException Var)
-safeGetVar var (Row columnIDs rowData) = (Right "getVar called with no element") --TODO Exception - Correct functionality 
+safeGetVar var (Row columnIDs rowData)= (Right "getVar called with no element") --TODO Exception - Correct functionality 
 
 -- Find columns with the same ID (var name)
 getDupCols :: Vars -> Vars
@@ -249,8 +249,8 @@ assignColumnVars = assignColumnVars' []
 
 assignColumnVars' :: ColumnTable -> Vars -> Table -> (Either InterException ColumnTable)
 assignColumnVars' os []     []     = Right os
-assignColumnVars' _  []     _      = throw IETooManyVars
-assignColumnVars' _  _      []     = throw IENotEnoughVars
+assignColumnVars' _  []     _      = throw IENotEnoughVars
+assignColumnVars' _  _      []     = throw IETooManyVars
 assignColumnVars' os (v:vs) (t:ts) = assignColumnVars' ((Column v t):os) vs ts
 
 -----------------------------------------------------------------
