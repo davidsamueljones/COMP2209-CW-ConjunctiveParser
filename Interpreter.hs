@@ -7,7 +7,7 @@ import Control.Monad
 import System.Exit  
 import Data.List
 import Data.Maybe 
-
+import Data.List.Split
 
 -----------------------------------------------------------------
 -- Interpreter Types
@@ -309,52 +309,29 @@ importTable f = do
 -- to be split with any characters between commas; this includes
 -- commas provided they are escaped with a backslash.
 
-
--- FIXME: This was pretty dumb, maybe a better way would be to do a split
--- by ',' using splitOn from Data.List.Split, then iterate over created arrays and
--- if there is a 'free' backslash, as in last element of array not directly 
--- preceeded by another backslash the slash is removed, a comma is placed and the two
--- arrays are rejoined. Not speed efficient but probably better... 
-
 parseCSVLine :: String -> [String]
-parseCSVLine xs = processEscapes (map trim (csvSplit xs)) csvEscapes 
+parseCSVLine xs = csvSplit xs 
 
 csvSplit :: String -> [ String ]
 csvSplit [] = []
-csvSplit xs = (fst (split xs)) : csvSplit (drop 1 (snd (split xs)))
+csvSplit xs = map trim (splitOnComma xs)
 
-csvEscapes :: [(String, String)]
-csvEscapes = [("\\,", ",")]
+splitOnComma :: String -> [String]
+splitOnComma xs = rejoinEscapes (splitOn "," xs)
 
--- FIXME: Relies on replace which isn't included normally...
-processEscapes :: Eq a => [a] -> [(a, a)] -> [a]
-processEscapes xs []         = xs
-processEscapes xs ((x,y):es) = processEscapes (replace x y xs) es
+rejoinEscapes :: [String] -> [String]
+rejoinEscapes (xs1:xs2:xss) | wasCommaEscaped xs1 = rejoinEscapes ((replaceComma xs1 ++ xs2):xss)
+rejoinEscapes (xs1:xss)     | otherwise           = xs1 : rejoinEscapes xss
+rejoinEscapes (xss)         = xss
 
-split :: String -> (String, String)
-split xs = mapTuple (fmap snd) (rawSplit xs)
+replaceComma :: String -> String
+replaceComma xs = init xs ++ ","
 
-rawSplit :: String -> ([(Char, Char)], [(Char, Char)])
-rawSplit xs = span (not . csvDelimiter) (adjs xs)
-
-adjs :: String -> [(Char, Char)]
-adjs xs = zip ('\0' : init xs) xs
-
-csvDelimiter :: (Char, Char) -> Bool
-csvDelimiter ('\\', ',') = False
-csvDelimiter (_   , ',') = True
-csvDelimiter  _          = False
-
--- Helper functions
-mapTuple :: (a -> b) -> (a, a) -> (b, b)
-mapTuple f (x, y) = (f x, f y)
-
--- FIXME: Does nothing...
-replace :: Eq a => a -> a -> [a] -> [a]
-replace x y xs = xs
-
---replace old new = intercalate new . splitOn old
--- ^^^ Data.String.Utils
+wasCommaEscaped :: String -> Bool
+wasCommaEscaped xs = wasCommaEscaped' (reverse xs) 
+wasCommaEscaped' []         = False
+wasCommaEscaped' (x1:x2:xs) = x1 == '\\' && x2 /= '\\'
+wasCommaEscaped' (x:xs)     = x == '\\'
 
 -----------------------------------------------------------------
 -- Multi-zip
