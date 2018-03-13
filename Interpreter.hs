@@ -134,7 +134,8 @@ evalExp env e = case e of
         case res' of
           Left e -> throw e -- rethrow up stack
           Right table -> do 
-            let newEnv = env {tableState = table}
+            let mergedTable = mergeColumns table
+            let newEnv = env {tableState = mergedTable}
             return (Right newEnv)
 
   ExQual vs e -> return (Right env) -- TODO
@@ -192,6 +193,19 @@ getVar var (Row columnIDs rowData)
 
 safeGetVar :: Var -> Row -> (Either InterException Var)
 safeGetVar var (Row columnIDs rowData)= (Right "getVar called with no element") --TODO Exception - Correct functionality 
+
+--Merges columns of a table in cases of repeated vars in columnIds)
+mergeColumns :: ColumnTable -> ColumnTable
+mergeColumns cs
+  | getDupCols ids == [] = cs
+  | otherwise            = removeDupCols $ row2col [row|row <- rs, repeatsAreEqual ids (rowData row)]
+  where ids = map columnID cs
+        rs = col2row cs
+        repeatsAreEqual :: [Var] -> [Var] -> Bool
+        repeatsAreEqual [] [] = True
+        repeatsAreEqual (x:xs) (y:ys)
+          | elem x xs = (y == ys !! fromJust (elemIndex x xs)) && repeatsAreEqual xs ys
+          | otherwise = repeatsAreEqual xs ys
 
 -- Find columns with the same ID (var name)
 getDupCols :: Vars -> Vars
