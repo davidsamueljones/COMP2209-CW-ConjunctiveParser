@@ -175,7 +175,7 @@ combine r1 r2 = [(Row ids (a ++ b))| a <- map rowData r1, b <- map rowData r2]
   where ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
                         
 sameVars :: [Var] -> Row -> Row -> Bool
-sameVars vars row1 row2 = foldr (&&) True [a | b <- vars, let a = sameVar b row1 row2]
+sameVars vars row1 row2 = and [a | b <- vars, let a = sameVar b row1 row2]
             
 sameVar :: Var -> Row -> Row -> Bool
 sameVar var row1 row2 = (getVar var row1) == (getVar var row2)
@@ -183,8 +183,11 @@ sameVar var row1 row2 = (getVar var row1) == (getVar var row2)
 getVar :: Var -> Row -> Var
 getVar var (Row columnIDs rowData)
   | elem var columnIDs = rowData !! fromJust (elemIndex var columnIDs)
-  | otherwise          = error ("getVar called with no element")--TODO Exception
- 
+  | otherwise          = ""
+
+safeGetVar :: Var -> Row -> (Either InterException Var)
+safeGetVar var (Row columnIDs rowData) = (Right "getVar called with no element") --TODO Exception - Correct functionality 
+
 -- Find columns with the same ID (var name)
 getDupCols :: Vars -> Vars
 getDupCols [] = []
