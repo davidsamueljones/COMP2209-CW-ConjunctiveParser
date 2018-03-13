@@ -124,7 +124,7 @@ evalExp env e = case e of
     case lRes of 
       Left e -> throw e -- rethrow up stack
       Right lEnv -> do
-        rRes <- evalExp lEnv rExp
+        rRes <- evalExp env rExp
         case rRes of 
           Left e -> throw e -- rethrow up stack
           Right rEnv -> do
