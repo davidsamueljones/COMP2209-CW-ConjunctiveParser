@@ -1,6 +1,5 @@
 {
 module Tokens where
-import Helpers
 }
 
 %wrapper "monadUserState"
@@ -293,6 +292,15 @@ data LexerErrorType = LEStringEOF
                     | LECommentEOF
                     | LENotToken
                     deriving (Eq, Show)
+
+-----------------------------------------------------------------
+-- Helper Utilities
+-----------------------------------------------------------------
+
+-- Functional infix if statement
+(?) :: Bool -> a -> a -> a
+(?) True x _ = x
+(?) False _ y = y
 
 }
 

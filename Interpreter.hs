@@ -1,12 +1,13 @@
 module Interpreter where
 import Grammar
-import Helpers
 
 import Control.Exception
 import Control.Monad
 import System.Exit  
 import Data.List
-import Data.Maybe 
+import Data.Maybe
+import Data.Either
+import Data.Char (isSpace)
 
 -----------------------------------------------------------------
 -- Interpreter Types

@@ -2,8 +2,8 @@ module Main where
 import Tokens
 import Grammar
 import Interpreter
-import Helpers
 
+import Data.Either
 import System.Environment
 import Control.Exception
 import Control.Monad
