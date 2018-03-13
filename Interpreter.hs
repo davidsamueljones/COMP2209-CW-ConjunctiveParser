@@ -8,6 +8,11 @@ import System.Exit
 import Data.List
 import Data.Maybe 
 
+
+-----------------------------------------------------------------
+-- Interpreter Types
+-----------------------------------------------------------------
+
 data Env  = Env 
           {
             baseTables  :: [TableStore],
@@ -17,47 +22,23 @@ data Env  = Env
           }
           deriving Show
 
-
-
-type Table       = [[String]]
-type ColumnTable = [Column]
-type RowTable    = [Row]
-
-
-data TableStore  = TableStore TableID Table deriving (Show, Eq)
-
-
-
-data Column = Column
-            {
-               columnID :: Var,
-               columnData :: [String]
-            }
-            deriving (Show, Eq)
-            
-data Row  = Row
-          {
-            columnIDs :: Vars,
-            rowData :: [String]
-          }
-          deriving (Show, Eq)
-       
-testColumn=  [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
-testColumn1= [(Column "x3" ["Julian"]),(Column "x4" ["Rakthe"])]
-
-testColumn2= [(Column "x1" ["1","1"]),(Column "x2" ["3","3"])]
-testColumn3= [(Column "x3" ["3","3"]),(Column "x4" ["4","4"])]
-
-testColumn4= [(Column "x1" ["1","1"]),(Column "x2" ["3","2"])]
-testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
-
-testColumn6= [(Column "x1" ["Sofiane","Tadic","Guido"]),(Column "x2" ["Boufal","Tadic","Carillo"])]
-testColumn7= [(Column "x2" ["Boufal","Carillo"]),(Column "x3" ["Maserati","Ferrari"])]
-
 -- Empty environment definition
 initEnv :: Env
 initEnv = Env [] [] [] []
 
+-- Raw table with identifier for lookups 
+type Table       = [[String]]
+data TableStore  = TableStore TableID Table deriving (Show, Eq)
+
+-- Table held in column form (with column variables)
+type ColumnTable = [Column]
+data Column = Column { columnID :: Var, columnData :: [String] }
+            deriving (Show, Eq)
+
+-- Table held in row form (with column variables)
+type RowTable    = [Row]     
+data Row    = Row    { columnIDs :: Vars, rowData :: [String] }
+            deriving (Show, Eq)
 
 -----------------------------------------------------------------
 -- Interpreter Control
@@ -125,7 +106,7 @@ evalExp env e = case e of
       Left e -> throw e -- rethrow up stack
       Right lEnv -> do
         putStrLn $ show $ lEnv
-        rRes <- evalExp lEnv rExp --FIXME Environment will get corrupted if lEnv is sent but without it equality cannot work
+        rRes <- evalExp lEnv rExp -- TODO: Is this okay? I think it should be...
         putStrLn $ show $ rRes
         case rRes of 
           Left e -> throw e -- rethrow up stack
@@ -158,16 +139,16 @@ evalExp env e = case e of
 -- * Throw errors for: * LHS free variables not using all free variables
 --                     * LHS has bound variables in
 makeOutputTable :: Vars -> ColumnTable -> Table
-makeOutputTable vs table = colStringArr table
+makeOutputTable vs table = rowStringArr $ col2row table
 
 -----------------------------------------------------------------
 -- Conjunction
 -----------------------------------------------------------------
 
 conjunction :: ColumnTable -> ColumnTable -> ColumnTable
-conjunction c1 c2 = removeDupCols $ transposeRow combined
-  where r1 = transposeCol c1
-        r2 = transposeCol c2
+conjunction c1 c2 = removeDupCols $ row2col combined
+  where r1 = col2row c1
+        r2 = col2row c2
         ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
         vars = getDupCols ids
         combined = [(Row ids (rowData a ++ rowData b))| a <- r1, b <- r2, sameVars vars a b]
@@ -207,33 +188,33 @@ removeDupCols (x:xs)
         id = columnID x
 
 -- Convert a table in column form into row form 
-transposeCol :: ColumnTable -> RowTable
-transposeCol t = transposeCol' (map columnID t) (map columnData t)
-transposeCol' :: Vars -> Table -> RowTable
-transposeCol' _ [] = []
-transposeCol' ids columns 
-  | (length $ head columns) > 1 = [(Row ids row)] ++ transposeCol' ids tailColumns
+col2row :: ColumnTable -> RowTable
+col2row t = col2row' (map columnID t) (map columnData t)
+col2row' :: Vars -> Table -> RowTable
+col2row' _ [] = []
+col2row' ids columns 
+  | (length $ head columns) > 1 = [(Row ids row)] ++ col2row' ids tailColumns
   | otherwise          = [(Row ids row)]
   where row = map head columns
         tailColumns = map tail columns
 
 -- Convert a table in row form into column form 
-transposeRow :: RowTable -> ColumnTable
-transposeRow [] = []
-transposeRow (t:ts) = transposeRow' (columnIDs t) (map rowData (t:ts))
-transposeRow' :: Vars -> Table -> ColumnTable
-transposeRow' _ [] = []
-transposeRow' (x:xs) rows
+row2col :: RowTable -> ColumnTable
+row2col [] = []
+row2col (t:ts) = row2col' (columnIDs t) (map rowData (t:ts))
+row2col' :: Vars -> Table -> ColumnTable
+row2col' _ [] = []
+row2col' (x:xs) rows
   | xs == []  = [(Column x column)]
-  | otherwise = [(Column x column)] ++ transposeRow' xs tailRows
+  | otherwise = [(Column x column)] ++ row2col' xs tailRows
   where column = map head rows
         tailRows = map tail rows
 
--- Convert a column table to a normal table
+-- Convert a column table to a normal table (uses raw table positions)
 colStringArr :: ColumnTable -> Table
 colStringArr t = map columnData t
 
--- Convert a row table to a normal table
+-- Convert a row table to a normal table (uses raw table positions)
 rowStringArr :: RowTable -> Table
 rowStringArr t = map rowData t
 
@@ -370,6 +351,18 @@ instance Exception InterException
 -----------------------------------------------------------------
 -- TODO!!!
 -----------------------------------------------------------------
+
+testColumn=  [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
+testColumn1= [(Column "x3" ["Julian"]),(Column "x4" ["Rakthe"])]
+
+testColumn2= [(Column "x1" ["1","1"]),(Column "x2" ["3","3"])]
+testColumn3= [(Column "x3" ["3","3"]),(Column "x4" ["4","4"])]
+
+testColumn4= [(Column "x1" ["1","1"]),(Column "x2" ["3","2"])]
+testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
+
+testColumn6= [(Column "x1" ["Sofiane","Tadic","Guido"]),(Column "x2" ["Boufal","Tadic","Carillo"])]
+testColumn7= [(Column "x2" ["Boufal","Carillo"]),(Column "x3" ["Maserati","Ferrari"])]
 
 -- Our Rules:
 -- * A variable that appears under the scope of an existential quantifier is 
