@@ -7,7 +7,6 @@ import Control.Monad
 import System.Exit  
 import Data.List
 import Data.Maybe 
-import Data.List.Split
 
 -----------------------------------------------------------------
 -- Interpreter Types
@@ -107,7 +106,7 @@ evalExp env e = case e of
       Left e -> throw e -- rethrow up stack
       Right lEnv -> do
         putStrLn $ show $ lEnv
-        rRes <- evalExp lEnv rExp -- TODO: Is this okay? I think it should be...
+        rRes <- evalExp lEnv rExp
         putStrLn $ show $ rRes
         case rRes of 
           Left e -> throw e -- rethrow up stack
@@ -156,7 +155,7 @@ evalExp env e = case e of
 -- * Throw errors for: * LHS free variables not using all free variables
 --                     * LHS has bound variables in
 makeOutputTable :: Vars -> ColumnTable -> Table
-makeOutputTable vs table = rowStringArr $ col2row table
+makeOutputTable vs table = map columnData table
 
 -----------------------------------------------------------------
 -- Conjunction
@@ -257,11 +256,11 @@ importTable f = do
 -----------------------------------------------------------------
 -- 'Simple' CSV Line Parser
 -----------------------------------------------------------------
--- Alternative to regex based approaches, which would be far 
--- easier, yet require unavailable libraries. Allows for CSV lines
--- to be split with any characters between commas; this includes
--- commas provided they are escaped with a backslash. A backslash 
--- exactly prior to a comma must be escaped by another backslash.
+-- Allows for CSV lines to be split with any characters between commas; 
+-- this includes commas provided they are escaped with a backslash. 
+-- Backslashes must also be escaped for this reason. Escapes also allow 
+-- forced white space at the beginning of fields FIXME!!!. All other escapes 
+-- are ignored. 
 
 parseCSVLine :: String -> [String]
 parseCSVLine xs = csvSplit xs 
@@ -271,21 +270,18 @@ csvSplit [] = []
 csvSplit xs = map trim (splitOnComma xs)
 
 splitOnComma :: String -> [String]
-splitOnComma xs = rejoinEscapes (splitOn "," xs)
+splitOnComma xs = splitOnComma' xs []
 
-rejoinEscapes :: [String] -> [String]
-rejoinEscapes (xs1:xs2:xss) | wasCommaEscaped xs1 = rejoinEscapes ((replaceComma xs1 ++ xs2):xss)
-rejoinEscapes (xs1:xss)     | otherwise           = xs1 : rejoinEscapes xss
-rejoinEscapes (xss)         = xss
-
-replaceComma :: String -> String
-replaceComma xs = init xs ++ ","
-
-wasCommaEscaped :: String -> Bool
-wasCommaEscaped xs = wasCommaEscaped' (reverse xs) 
-wasCommaEscaped' []         = False
-wasCommaEscaped' (x1:x2:xs) = x1 == '\\' && x2 /= '\\'
-wasCommaEscaped' (x:xs)     = x == '\\'
+splitOnComma' :: String -> String -> [String]
+splitOnComma' []         buf = [reverse buf]
+splitOnComma' (x1:x2:xs) buf | x1 == ','  && x2 == ',' = reverse buf : [] : splitOnComma' xs  []
+splitOnComma' (x1:x2:xs) buf | x1 /= '\\' && x2 == ',' = reverse (x1:buf) : splitOnComma' xs  []
+splitOnComma' (x1:x2:xs) buf | x1 == '\\'              = splitOnComma' (xs) (x2:buf)
+splitOnComma' (x1:xs)    buf | x1 == ','               = reverse (buf) : splitOnComma' xs  []
+splitOnComma' (x1:xs)    buf | otherwise               = splitOnComma' (xs) (x1:buf)
+  
+trim :: String -> String
+trim = let f = reverse . dropWhile isSpace in f . f
 
 -----------------------------------------------------------------
 -- Helper Functions
@@ -329,14 +325,6 @@ row2col' (x:xs) rows
   | otherwise = [(Column x column)] ++ row2col' xs tailRows
   where column = map head rows
         tailRows = map tail rows
-
--- Convert a column table to a normal table (uses raw table positions)
-colStringArr :: ColumnTable -> Table
-colStringArr t = map columnData t
-
--- Convert a row table to a normal table (uses raw table positions)
-rowStringArr :: RowTable -> Table
-rowStringArr t = map rowData t
 
 -- Transpose but fails if lists are not all equal length
 transpose' :: [[a]] -> Either InterException [[a]]

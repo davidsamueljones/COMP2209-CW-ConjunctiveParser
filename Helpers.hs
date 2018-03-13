@@ -29,6 +29,3 @@ fromLeft x (Right _) = x
 
 --Manually add Either functions since they aren't available on all haskell versions   
 -- https://hackage.haskell.org/package/base-4.10.1.0/docs/src/Data.Either.html#Either
-
-trim :: String -> String
-trim = let f = reverse . dropWhile isSpace in f . f
