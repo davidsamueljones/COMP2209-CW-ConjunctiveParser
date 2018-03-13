@@ -14,7 +14,7 @@ main :: IO ()
 main = do args <- getArgs
           case args of
             [f] -> interpretFile f
-            _      -> interpretFile "p5.cql"
+            _      -> interpretFile "p1.cql"
             -- _      -> do putStrLn "\nInvalid input arguments, correct usage is:\n\t myinterpreter <input>\n"
             --              exitFailure
 
@@ -37,8 +37,9 @@ interpretString dat = do
     interResult <- runInterpreter ast
     exitIfError interResult
     -- No interpret error
-    let output = fromRight "" interResult
-    putStrLn output
+    -- let output = fromRight "" interResult
+    -- putStrLn output
+    putStrLn "Interpretation Finished"
     -- output <- runInterpreter ast
     -- putStrLn output -- FIXME: Do interpretation
 

@@ -15,8 +15,7 @@ import Data.Char (isSpace)
 
 data Env  = Env 
           {
-            baseTables  :: [TableStore],
-            queries     :: [TableStore], 
+            storedTables  :: [TableStore],
             tableState  :: ColumnTable,
             boundVars   :: Vars
           }
@@ -24,7 +23,7 @@ data Env  = Env
 
 -- Empty environment definition
 initEnv :: Env
-initEnv = Env [] [] [] []
+initEnv = Env [] [] []
 
 -- Raw table with identifier for lookups 
 type Table       = [[String]]
@@ -44,20 +43,21 @@ data Row = Row { columnIDs :: Vars, rowData :: [String] }
 -- Interpreter Control
 -----------------------------------------------------------------
 
--- Process a program, starting with imports and then queries
+-- Process a program, starting with imports and then statements
 -- This is built up in a global environment so all queries have
 -- knowledge of all base tables and all queries have knowledge
--- of previous queries FIXME: Implement that bit if time
+-- of previous stored queries.
 runInterpreter :: Prog -> IO (Either InterException String)
-runInterpreter (Prog is qs) = do
+runInterpreter (Prog is stmts) = do
   -- Initiate environment with imported base tables
   resImports <- evalImports initEnv is
   case resImports of
     Left e -> throw e -- rethrow up stack
     Right envImports -> do
       -- No import errors, do queries
-      resQueries <- evalQueries envImports qs 0
-      return $ Right (show $ queries $ fromRight initEnv resQueries) 
+      resStmts <- evalStmts envImports stmts
+      -- TODO : Error handling
+      return (Right "")
 
 -- Process imports by importing data and creating base tables
 -- in environment
@@ -71,36 +71,41 @@ evalImports env (t:ts) = case t of
       Left e -> throw e -- rethrow up stack
       Right dat -> do
         let imported = TableStore i dat
-        let updatedEnv = env {baseTables = (imported:(baseTables env))}
+        let updatedEnv = env {storedTables = (imported:(storedTables env))}
         evalImports updatedEnv ts
 
--- Process queries, placing result tables in environment
-evalQueries :: Env -> Queries -> Int -> IO (Either InterException Env) 
-evalQueries env []     _ = return (Right env)
-evalQueries env (q:qs) i = do
-    res <- evalQuery env q
+-- Process statements, placing updates in environment
+evalStmts :: Env -> Stmts -> IO (Either InterException Env) 
+evalStmts env []        = return (Right env)
+evalStmts env (s:ss) = do
+    res <- evalStmt env s
     case res of
       Left e -> throw e -- rethrow up stack
-      Right table -> do
-        let query = TableStore (show i) table
-        let updatedEnv = env {queries = (query:(queries env))}
-        evalQueries updatedEnv qs (i+1)
+      Right newEnv -> do
+        evalStmts newEnv ss
 
--- Process query, returning created table in column form
-evalQuery :: Env -> Query -> IO (Either InterException Table)
-evalQuery env (Query vs e) = do
-  res <- evalExp env e
-  case res of 
-    Left e -> throw e -- rethrow up stack
-    Right env' -> do
-      --putStrLn $ show $ tableState env'
-      let table = makeOutputTable vs (tableState env')
-      case table of
-        Left e -> throw e -- rethrow up stack
-        Right tab -> do
-          let csv = table2csv tab
-          writeFile "output.csv" csv --TODO: to command line after all queries evaluated
-          return (Right tab)
+-- Process statement, updating environment respectively
+evalStmt :: Env -> Stmt -> IO (Either InterException Env)
+evalStmt env s = case s of 
+  (Query store vs e) -> do
+    res <- evalExp env e
+    case res of 
+      Left e -> throw e -- rethrow up stack
+      Right env' -> do
+        let res' = makeOutputTable vs (tableState env')
+        case res' of
+          Left e -> throw e -- rethrow up stack
+          Right table -> do
+            case store of
+              Nothing -> do
+                printTable table
+                return (Right env)
+              Just i -> do
+                let store = TableStore i table -- TODO, throw store error if table exists
+                let updatedEnv = env {storedTables = (store:(storedTables env))}
+                return (Right updatedEnv)
+
+  (Print t) -> return (Right env) --TODO
 
 -- Process expression, updating environment respectively -- FIXME FINISH
 evalExp :: Env -> Exp -> IO (Either InterException Env) 
@@ -111,9 +116,7 @@ evalExp env e = case e of
     case lRes of 
       Left e -> throw e -- rethrow up stack
       Right lEnv -> do
-        putStrLn $ show $ lEnv
         rRes <- evalExp lEnv rExp
-        putStrLn $ show $ rRes
         case rRes of 
           Left e -> throw e -- rethrow up stack
           Right rEnv -> do
@@ -131,7 +134,7 @@ evalExp env e = case e of
         return (Right newEnv)
     
   Lookup t vs -> do
-    let res = lookupTableData t (baseTables env)
+    let res = lookupTableData t (storedTables env)
     case res of
       Left e -> throw e -- rethrow up stack
       Right dat -> do 
@@ -261,6 +264,7 @@ importTable f = do
 --Selecting vars from final table
 -----------------------------------------------------------------
 
+-- TODO: Doesn't check boundness?
 -- Gets the requested columns in the requested order, rows sorted lexicographically
 makeOutputTable :: [Var] -> ColumnTable -> (Either InterException Table)
 makeOutputTable xs cls
@@ -368,10 +372,12 @@ allLensSame xss = allValsSame $ map length xss
 allValsSame :: Eq a =>[a] -> Bool
 allValsSame xs = all (== head xs) (tail xs)
 
-table2csv :: [[String]] -> String
+table2csv :: Table -> String
 table2csv xs = unlines ( map (intercalate ",") rows)
              where rows = transpose xs
                    
+printTable :: Table -> IO ()
+printTable t = putStrLn $ table2csv t
 
 
 -----------------------------------------------------------------
