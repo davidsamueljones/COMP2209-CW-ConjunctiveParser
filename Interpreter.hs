@@ -95,7 +95,12 @@ evalQuery env (Query vs e) = do
     Right env' -> do
       --putStrLn $ show $ tableState env'
       let table = makeOutputTable vs (tableState env')
-      return (Right table)
+      case table of
+        Left e -> throw e -- rethrow up stack
+        Right tab -> do
+          let csv = table2csv tab
+          writeFile "output.csv" csv --TODO: to command line after all queries evaluated
+          return (Right tab)
 
 -- Process expression, updating environment respectively -- FIXME FINISH
 evalExp :: Env -> Exp -> IO (Either InterException Env) 
@@ -155,8 +160,6 @@ evalExp env e = case e of
 -- * Order as outputs
 -- * Throw errors for: * LHS free variables not using all free variables
 --                     * LHS has bound variables in
-makeOutputTable :: Vars -> ColumnTable -> Table
-makeOutputTable vs table = map columnData table
 
 -----------------------------------------------------------------
 -- Conjunction
@@ -259,9 +262,9 @@ importTable f = do
 -----------------------------------------------------------------
 
 -- Gets the requested columns in the requested order, rows sorted lexicographically
-getColumns :: [Var] -> ColumnTable -> (Either InterException ColumnTable)
-getColumns xs cls
-  | length columns == length xs = Right columns
+makeOutputTable :: [Var] -> ColumnTable -> (Either InterException Table)
+makeOutputTable xs cls
+  | length columns == length xs = Right (map columnData columns)
   | otherwise                   = throw IEVarNotFound
   where ids = map columnID cls
         columns = lexiSort [fst colbool| a <- xs, let colbool = getColumn a cls, snd colbool == True]
@@ -276,6 +279,7 @@ lexiSort :: ColumnTable -> ColumnTable
 lexiSort a = row2col $ sorted
            where rows = col2row a
                  sorted = sortOn (\a -> concat $ rowData a) rows
+
                  
                  
 -----------------------------------------------------------------
@@ -363,6 +367,12 @@ allLensSame xss = allValsSame $ map length xss
 -- True if all values in list are equal 
 allValsSame :: Eq a =>[a] -> Bool
 allValsSame xs = all (== head xs) (tail xs)
+
+table2csv :: [[String]] -> String
+table2csv xs = unlines ( map (intercalate ",") rows)
+             where rows = transpose xs
+                   
+
 
 -----------------------------------------------------------------
 -- Interpreter Exceptions
