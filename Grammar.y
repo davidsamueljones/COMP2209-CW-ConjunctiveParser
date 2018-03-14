@@ -27,9 +27,11 @@ import Control.Exception
     import  { Token _ TImport}
     as      { Token _ TAs}
     print   { Token _ TPrint}
-    VAR     { Token _ (TVar $$)}
-    TABLE   { Token _ (TTable $$)}
-    STRING  { Token tk (TString $$)}
+    -- We do not use $$ notation to keep token data, unfortunate consequence is mappings
+    -- start to look a bit messy
+    VAR     { Token _ (TVar _)}
+    TABLE   { Token _ (TTable _)}
+    STRING  { Token _ (TString _)}
 
 %nonassoc '.'
 %left '^'
@@ -41,26 +43,26 @@ Prog     : Imports Stmts                        { Prog $1 $2 }
 -- Store imports as a list
 Imports  : Import ';' Imports                  { $1:$3 } 
          | {- empty -}                         { [] }
-Import   : import STRING as TABLE              { (Import $2 $4) }
+Import   : import STRING as TABLE              { (Import (tkSVal $2) (tkSVal $4)) }
 
 -- Store statements as a list
 Stmts    : Stmt ';' Stmts                      { $1:$3 }
          | {- empty -}                         { [] }
-Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just $1) $3 $5) }
+Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just (tkSVal $1)) $3 $5) }
          | Vars '<-' Exp                       { (Query (Nothing) $1 $3) }
-         | print TABLE                         { (PrintTable $2) }
-         | print STRING                        { (PrintString $2) }
+         | print TABLE                         { (PrintTable  (tkSVal $2)) }
+         | print STRING                        { (PrintString (tkSVal $2)) }
 
 -- Store variables as a list
-Vars     : VAR MoreVars                        { $1:$2 }
+Vars     : VAR MoreVars                        { (tkSVal $1):$2 }
          | {- empty -}                         { [] }
-MoreVars : ',' VAR MoreVars                    { $2:$3 }
+MoreVars : ',' VAR MoreVars                    { (tkSVal $2):$3 }
          | {- empty -}                         { [] }
 
 -- Use tree structure for expressions
-Exp      : TABLE '(' Vars ')'                  { Lookup $1 $3 }
-         | VAR '==' VAR                        { Equality $1 $3 }
-         | VAR '!=' VAR                        { NotEquality $1 $3 }
+Exp      : TABLE '(' Vars ')'                  { Lookup (tkSVal $1) $3 }
+         | VAR '==' VAR                        { Equality (tkSVal $1) (tkSVal $3) }
+         | VAR '!=' VAR                        { NotEquality (tkSVal $1) (tkSVal $3) }
          | '$' Vars '.' Exp                    { eqFlatten (ExQual $2 $4) }
          | Exp '^' Exp                         { Conjunction $1 $3 }
 

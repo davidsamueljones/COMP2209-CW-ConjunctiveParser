@@ -277,6 +277,13 @@ data Token  = Token
             }
             deriving (Eq, Show)
 
+-- Helper function to getvalue of token
+tkSVal :: Token -> String
+tkSVal (Token _ (TVar    v)) = v
+tkSVal (Token _ (TTable  v)) = v
+tkSVal (Token _ (TString v)) = v
+tkSVal _                     = ""
+
 -- Types of token that can be lexed
 data TokenClass = TAssign
                 | TSemicolon        

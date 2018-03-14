@@ -435,8 +435,8 @@ data InterException = IEImport InterException
                     | IEReadError IOError
                     | IETableNotFound TableID
                     | IETableAlreadyDefined TableID
-                    | IETooManyVars String
-                    | IENotEnoughVars String
+                    | IETooManyVars Var
+                    | IENotEnoughVars Var
                     | IEVarNotFound Var
                     | IEVarAlreadyBound Var
                     | IEVarExistsNotBound Var
