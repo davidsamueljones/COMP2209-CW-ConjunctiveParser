@@ -1,7 +1,7 @@
 module Interpreter where
 import Grammar
 
-import Control.Exception
+import Control.Exception (try)
 import Control.Monad
 import System.Exit  
 import Data.List
@@ -65,12 +65,12 @@ runInterpreter (Prog is stmts) = do
   -- Initiate environment with imported base tables
   resImports <- evalImports initEnv is
   case resImports of
-    Left e -> throw (IEImport e) -- rethrow up stack
+    Left e -> throwIO (IEImport e) -- rethrow up stack
     Right envImports -> do
       -- No import errors, do queries
       resStmts <- evalStmts envImports stmts
       case resStmts of
-        Left e -> throw (IEQuery e)
+        Left e -> throwIO (IEQuery e)
         Right _ -> return (Right "")
       -- TODO : Error handling
 
@@ -83,11 +83,11 @@ evalImports env (t:ts) = case t of
   Import p i -> do
     let findVar = find (\x -> storedTableID x == i) (storedTables env)
     case findVar of
-      Just _ -> throw $ IETableAlreadyDefined i --If A table is already defined under that name
+      Just _ -> throwIO $ IETableAlreadyDefined i --If A table is already defined under that name
       Nothing -> do
         res <- importTable p
         case res of
-          Left e -> throw e -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right dat -> do
             let imported = StoredTable i dat
             let updatedEnv = env {storedTables = (imported:(storedTables env))}
@@ -99,7 +99,7 @@ evalStmts env []        = return (pure env)
 evalStmts env (s:ss) = do
     res <- evalStmt env s
     case res of
-      Left e -> throw e -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right newEnv -> do
         evalStmts newEnv ss
 
@@ -109,21 +109,22 @@ evalStmt env s = case s of
   (Query store vs e) -> do
     res <- evalExp env e
     case res of 
-      Left e -> throw e -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right env' -> do
         let res' = makeOutputTable vs (boundVars env') (tableState env')
         case res' of
-          Left e -> throw e -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right table -> do
             case store of
               Nothing -> do
                 -- Print table but do not store it for later use
                 printTable table
                 return (pure env)
-              Just i -> do -- Store table for later use, not printing it
+              Just i -> do 
+                -- Store table for later use, not printing it
                 let findVar = find (\x -> storedTableID x == i) (storedTables env)
                 case findVar of
-                  Just _ -> throw $ IETableAlreadyDefined i --If A table is already defined under that name
+                  Just _ -> throwIO $ IETableAlreadyDefined i
                   Nothing -> do
                     let store = StoredTable i table
                     let updatedEnv = env {storedTables = (store:(storedTables env))}
@@ -132,7 +133,7 @@ evalStmt env s = case s of
   (Print t) -> do
     let res = lookupTableData t (storedTables env)
     case res of 
-      Left e -> throw e -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right table -> do
         printTable table
         return (pure env)
@@ -144,28 +145,28 @@ evalExp env e = case e of
   Conjunction lExp rExp -> do
     lRes <- evalExp env lExp
     case lRes of 
-      Left e -> throw e -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right lEnv -> do
         case rExp of
         
           (Equality v1 v2) -> do 
             rRes <- evalExp lEnv (Equality v1 v2)
             case rRes of 
-              Left e -> throw e -- rethrow up stack
+              Left e -> throwIO e -- rethrow up stack
               Right rEnv -> do
                 return (pure rEnv)  
 
           (NotEquality v1 v2) -> do 
             rRes <- evalExp lEnv (NotEquality v1 v2)
             case rRes of 
-              Left e -> throw e -- rethrow up stack
+              Left e -> throwIO e -- rethrow up stack
               Right rEnv -> do
                 return (pure rEnv)                  
         
           rEx -> do
             rRes <- evalExp lEnv rEx
             case rRes of 
-              Left e -> throw e -- rethrow up stack
+              Left e -> throwIO e -- rethrow up stack
               Right rEnv -> do
                 let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
                 let newEnv = rEnv {tableState = joinedTable} 
@@ -175,7 +176,7 @@ evalExp env e = case e of
     let currentTable = tableState env 
     let newTable = equality currentTable v1 v2
     case newTable of
-      Left e -> throw e -- throw up the stack (IEVarNotFound)
+      Left e -> throwIO e -- throw up the stack (IEVarNotFound)
       Right table -> do
         let newEnv = env {tableState = table}
         return (pure newEnv)
@@ -185,7 +186,7 @@ evalExp env e = case e of
     let currentTable = tableState env 
     let newTable = notEquality currentTable v1 v2
     case newTable of
-      Left e -> throw e -- throw up the stack (IEVarNotFound)
+      Left e -> throwIO e -- throw up the stack (IEVarNotFound)
       Right table -> do
         let newEnv = env {tableState = table}
         return (pure newEnv)    
@@ -193,11 +194,11 @@ evalExp env e = case e of
   Lookup t vs -> do
     let res = lookupTableData t (storedTables env)
     case res of
-      Left e -> throw e -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right dat -> do 
         let res' = makeTable t vs dat
         case res' of
-          Left e -> throw e -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right table -> do 
             let mergedTable = mergeColumns table
             let newEnv = env {tableState = mergedTable}
@@ -206,11 +207,11 @@ evalExp env e = case e of
   ExQual vs e -> do
     let res = addBoundVariables vs env
     case res of
-      Left e -> throw e -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right envWithBounds -> do
         res' <- evalExp envWithBounds e
         case res' of
-          Left e -> throw e -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right newEnv -> return (pure newEnv)
 
 -----------------------------------------------------------------
@@ -358,7 +359,7 @@ importTable :: FilePath -> IO (InterReturn TableData)
 importTable f = do 
   res <- try $ readFile f :: IO (Either IOError String)
   case res of
-    Left e -> throw (IEReadError e)
+    Left e -> throwIO (IEReadError e)
     Right dat -> do
       let tokenise = map parseCSVLine . lines
       return (pure (tokenise dat))              
@@ -440,4 +441,9 @@ data InterException = IEImport InterException
                     | IEUnknown
                     deriving (Show)
 
-instance Exception InterException
+-- Exceptions are tracked inside LHS so throw is syntactic sugar
+-- for left assignment
+throw :: InterException -> Either InterException b
+throw x = Left x
+throwIO :: InterException -> IO (Either InterException b)
+throwIO x = return $ Left x
