@@ -117,7 +117,7 @@ evalStmt env s = case s of
     case res of 
       Left e -> throwIO e -- rethrow up stack
       Right env' -> do
-        let res' = mkOutputTable vs (boundVars env') (tableState env')
+        let res' = makeOutputTable vs (boundVars env') (tableState env')
         case res' of
           Left e -> throwIO e -- rethrow up stack
           Right table -> do
@@ -325,53 +325,25 @@ addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
 
 -- Gets the requested columns in the requested order, sorting rows lexicographically
 makeOutputTable :: Vars -> Vars -> RowTable -> (InterReturn TableData) 
-makeOutputTable outVars boundVars table = do
-  let notVarOutputs = [v | v <- outVars, not (v `elem` (columnVars table))]
-  case notVarOutputs of
-    (v:_) -> throw $ IEOutputVarNotExist v
-    [] -> do
-      -- All output variables in table
-      let boundOutputs = [v | v <- outVars, v `elem` boundVars]
-      case boundOutputs of
-        (v:_) -> throw $ IEOutputVarBound v
-        [] -> do
-          -- All output variables are not bound
-          let freeVariables = filter (\x -> not (x `elem` boundVars)) (columnVars table)
-          let missingVariables = [v | v <- freeVariables, not (v `elem` outVars)]
-          case missingVariables of
-            (v:_) -> throw $ IEVarNotInOutput v
-            [] -> do
-            -- All free variables are in output
-            let columns  = transpose (tableData table) 
-            let filtered = filter (\x -> fst x `elem` outVars) (zip (columnVars table) columns)
-            let ordered  = sortOn (\x -> lookup (fst x) (zip outVars [0..])) filtered 
-            let rows     = transpose (map snd ordered)
-            let sorted   = sortOn (\r -> concat r) rows
-            return sorted                 
-
-mkOutputTable :: Vars -> Vars -> RowTable -> (InterReturn TableData) 
-mkOutputTable outVars boundVars (Table columnVars tableData)
-  | boundOverlap /= []                            = throw $ IEOutputVarBound $ head boundOverlap
-  | outNotInCol /= []                             = throw $ IEOutputVarNotExist $ head outNotInCol
-  | freeNotInOut /= []                            = throw $ IEVarNotInOutput $ head freeNotInOut
-  | otherwise                                     = return $ sortOn (\r -> concat r) notSortedOutput
+makeOutputTable outVars boundVars (Table columnVars tableData)
+  | boundOverlap /= [] = throw $ IEOutputVarBound $ head boundOverlap
+  | outNotInCol  /= [] = throw $ IEOutputVarNotExist $ head outNotInCol
+  | freeNotInOut /= [] = throw $ IEVarNotInOutput $ head freeNotInOut
+  | otherwise          = return $ sortOn (\r -> concat r) notSortedOutput
+  
   where boundOverlap = intersect outVars boundVars
-        outNotInCol = [a | a<- outVars, notElem a columnVars]
-        freeNotInOut = [a | a<- columnVars, notElem a boundVars, notElem a outVars]
+        outNotInCol = [a | a <- outVars, notElem a columnVars]
+        freeNotInOut = [a | a <- columnVars, notElem a boundVars, notElem a outVars]
         columns = transpose tableData
         notSortedOutput = transpose [col | v <- outVars, let col = getColumn v columnVars columns]
-        
-        getColumn :: Var -> Vars -> TableData -> Column
-        --getColumn _ [] [] = []
-        getColumn var (c:cs) (t:ts)
-          | var == c  = t
-          | otherwise = getColumn var cs ts
+    
+getColumn :: Var -> Vars -> TableData -> Column
+getColumn _   _     [] = []
+getColumn _   []    _  = []
+getColumn var (c:cs) (t:ts)
+  | var == c  = t
+  | otherwise = getColumn var cs ts
 
-        
-allMemberOf :: Eq a => [a] -> [a] -> Bool
-allMemberOf l1 l2 = foldr (&&) True memTab
-  where memTab = [elem a l2 | a<-l1]
-            
 -- Format table as a csv string
 table2csv :: TableData -> Maybe String
 table2csv [[]] = Nothing
