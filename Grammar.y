@@ -104,7 +104,7 @@ parseError tk = do
     (TPrint) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of 'print' Correct use is print TABLE_NAME " 
     (TTable t) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect placement of Table '" ++ t ++ "'" 
     (TVar v) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect placement of Variable '" ++ v ++ "'" 
-    (t) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of token '" ++ t ++ "'"
+    (t) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of token '" ++ show t ++ "'"
 
   
   
