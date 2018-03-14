@@ -423,11 +423,6 @@ removeDupCols' (i:is) (r:rs)
   | elem i is = removeDupCols' is rs
   | otherwise = [r] ++ removeDupCols' is rs
 
--- Transpose but fails if lists are not all equal length
-transpose' :: [[a]] -> InterReturn [[a]]
-transpose' xss | allLensSame xss = return (transpose xss)
-transpose' xss | otherwise       = throw IEUnequalLists
-
 -- Get length of all rows, true if all equal
 allLensSame :: [[a]] -> Bool
 allLensSame xss = allValsSame $ map length xss
@@ -443,7 +438,8 @@ data InterException = IEImports InterException
                     | IEImport InterException 
                     | IEStmts InterException
                     | IEStmt InterException
-                    | IEUnequalLists -- DO WE NEED?
+                    | IEExp InterException
+                    | IEUnequalLists
                     | IEReadError IOError
                     | IETableNotFound TableID
                     | IETableAlreadyDefined TableID
