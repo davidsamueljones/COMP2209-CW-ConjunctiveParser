@@ -78,14 +78,17 @@ evalImports :: Env -> Imports -> IO (InterReturn Env)
 evalImports env []     =  return (pure env)
 evalImports env (t:ts) = case t of
   Import p i -> do
-    -- TODO: Error for table already exists
-    res <- importTable p
-    case res of
-      Left e -> throw e -- rethrow up stack
-      Right dat -> do
-        let imported = StoredTable i dat
-        let updatedEnv = env {storedTables = (imported:(storedTables env))}
-        evalImports updatedEnv ts
+    let findVar = find (\x -> storedTableID x == i) (storedTables env)
+    case findVar of
+      Just _ -> throw $ IETableAlreadyDefined i --If A table is already defined under that name
+      Nothing -> do
+        res <- importTable p
+        case res of
+          Left e -> throw e -- rethrow up stack
+          Right dat -> do
+            let imported = StoredTable i dat
+            let updatedEnv = env {storedTables = (imported:(storedTables env))}
+            evalImports updatedEnv ts
 
 -- Process statements, placing updates in environment
 evalStmts :: Env -> Stmts -> IO (InterReturn Env) 
@@ -114,11 +117,14 @@ evalStmt env s = case s of
                 -- Print table but do not store it for later use
                 printTable table
                 return (pure env)
-              Just i -> do
-                -- Store table for later use, not printing it
-                let store = StoredTable i table -- TODO, throw store error if table exists
-                let updatedEnv = env {storedTables = (store:(storedTables env))}
-                return (pure updatedEnv)
+              Just i -> do -- Store table for later use, not printing it
+                let findVar = find (\x -> storedTableID x == i) (storedTables env)
+                case findVar of
+                  Just _ -> throw $ IETableAlreadyDefined i --If A table is already defined under that name
+                  Nothing -> do
+                    let store = StoredTable i table -- TODO, throw store error if table exists
+                    let updatedEnv = env {storedTables = (store:(storedTables env))}
+                    return (pure updatedEnv)
 
   (Print t) -> do
     let res = lookupTableData t (storedTables env)
@@ -394,6 +400,7 @@ data InterException = IEImport InterException
                     | IEUnequalLists
                     | IEReadError IOError
                     | IETableNotFound TableID
+                    | IETableAlreadyDefined TableID
                     | IETooManyVars
                     | IENotEnoughVars
                     | IEVarNotFound

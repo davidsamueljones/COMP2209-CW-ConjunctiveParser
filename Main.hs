@@ -14,7 +14,7 @@ main :: IO ()
 main = do args <- getArgs
           case args of
             [f] -> interpretFile f
-            _      -> interpretFile "p3.cql"
+            _      -> interpretFile "test.cql"
             -- _      -> do putStrLn "\nInvalid input arguments, correct usage is:\n\t myinterpreter <input>\n"
             --              exitFailure
 
