@@ -37,7 +37,8 @@ tokens :-
   <0>       \;                     { lexT  TSemicolon }
   <0>       \,                     { lexT  TComma }
   <0>       \.                     { lexT  TDot }
-  <0>       \=                     { lexT  TEqual }  
+  <0>       \=\=                   { lexT  TEqual }
+  <0>       \!\=                   { lexT  TNotEqual }    
   <0>       \^                     { lexT  TConjunction }
   <0>       \<\-                   { lexT  TLeftArrow }
   <0>       \(                     { lexT  TLParenthesis }
@@ -98,6 +99,10 @@ alexInitUserState   = AlexUserState
 -- Leave state alone by setting it to itself
 noStateChange :: Alex ()
 noStateChange = alexGetUserState >>= alexSetUserState 
+
+-- Get current position of lexer from lexer state
+getCurAlexPos :: Alex AlexPosn
+getCurAlexPos = Alex $ \s@AlexState{alex_pos=pos} -> Right (s, pos)
 
 -----------------------------------------------------------------
 -- Comment State Control Functions
@@ -244,7 +249,6 @@ alexError' t m = do
     LEStringEOF -> alexError $ "Lexing Error: String not terminated before EOF"
     LENotToken  -> alexError $ "Lexing Error: Unrecognised token at " ++ readAlexPos p
 
-
 readAlexPos :: AlexPosn -> String
 readAlexPos (AlexPn a l c) = (show l) ++ ":" ++ (show c)
 
@@ -267,8 +271,8 @@ data AlexUserState  = AlexUserState
 type Tokens = [Token]
 data Token  = Token
             {
-              tPosition :: AlexPosn,
-              tClass    :: TokenClass
+              tkPos   :: AlexPosn,
+              tkClass :: TokenClass
             }
             deriving (Eq, Show)
 
@@ -277,7 +281,8 @@ data TokenClass = TAssign
                 | TSemicolon        
                 | TComma             
                 | TDot             
-                | TEqual            
+                | TEqual
+                | TNotEqual            
                 | TConjunction       
                 | TLeftArrow         
                 | TLParenthesis     

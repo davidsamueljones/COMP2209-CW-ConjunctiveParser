@@ -4,15 +4,21 @@ import Tokens
 import Control.Exception
 }
 
-%name parseTokens
+%name runParser
 %tokentype { Token }
+
+-- Connect Alex Lexer to Happy Parser 
+%monad { Parser } { (>>=) } { return }
+%lexer { (\x -> alexMonadScan' >>= x) } { Token _ TEOF }
 %error { parseError }
+
 %token
     '::'    { Token _ TAssign}
     ';'     { Token _ TSemicolon}
     ','     { Token _ TComma}
     '.'     { Token _ TDot}
-    '='     { Token _ TEqual}
+    '=='    { Token _ TEqual}
+    '!='    { Token _ TNotEqual}
     '^'     { Token _ TConjunction}
     '<-'    { Token _ TLeftArrow}
     '('     { Token _ TLParenthesis}
@@ -23,9 +29,8 @@ import Control.Exception
     print   { Token _ TPrint}
     VAR     { Token _ (TVar $$)}
     TABLE   { Token _ (TTable $$)}
-    STRING  { Token _ (TString $$)}
+    STRING  { Token tk (TString $$)}
 
--- TODO: Check associativity
 %nonassoc '.'
 %left '^'
 %%
@@ -38,6 +43,7 @@ Imports  : Import ';' Imports                  { $1:$3 }
          | {- empty -}                         { [] }
 Import   : import STRING as TABLE              { (Import $2 $4) }
 
+-- Store statements as a list
 Stmts    : Stmt ';' Stmts                      { $1:$3 }
          | {- empty -}                         { [] }
 Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just $1) $3 $5) }
@@ -52,14 +58,38 @@ MoreVars : ',' VAR MoreVars                    { $2:$3 }
 
 -- Use tree structure for expressions
 Exp      : TABLE '(' Vars ')'                  { Lookup $1 $3 }
-         | VAR '=' VAR                         { Equality $1 $3 }
+         | VAR '==' VAR                        { Equality $1 $3 }
+         | VAR '!=' VAR                        { NotEquality $1 $3 }
          | '$' Vars '.' Exp                    { eqFlatten (ExQual $2 $4) }
          | Exp '^' Exp                         { Conjunction $1 $3 }
 
 {
 
 -----------------------------------------------------------------
--- Helper Functions
+-- Parser Control
+-----------------------------------------------------------------
+
+-- This parser uses an Alex user so share its state monad 
+type Parser a = Alex a
+
+-- Run lexer and parser together
+runLexAndParse :: String -> Either String Prog
+runLexAndParse s = do 
+     let res = runAlex s (runParser)
+     case res of
+        Left err -> Left err
+        Right prog -> return prog
+
+-- Output for parsing errors
+parseError :: Token -> Parser a
+parseError tk = do
+  (AlexPn _ l c) <- getCurAlexPos
+  makeParseError $ "ERROR" ++ show tk ++ (show (l, c, "NO MESSSAGE")) -- TODO
+
+makeParseError = alexError
+
+-----------------------------------------------------------------
+-- Parsing Helper Functions
 -----------------------------------------------------------------
 
 -- Function to flatten vars from consecutive ExQual parse results 
@@ -75,26 +105,8 @@ eqFlatten e@(ExQual _ _) = (ExQual (eqVars e) (eqNext e))
     eqNext (ExQual vs e) = e
 eqFlatten e = e
 
------------------------------------------------------------------
--- Error Handling
------------------------------------------------------------------
-
--- Run with error handling
-runParse :: Tokens -> IO (Either ParseException Prog)
-runParse ts = try $ evaluate (parseTokens ts)
-
--- TODO: Are we sure we want to lose information with the exception
--- Possibly look into monadic approach
-data ParseException = ParseException AlexPosn
-instance Exception ParseException
-
--- TODO: Improve this error
-instance Show ParseException where
-  show (ParseException (AlexPn o l c)) = "Parse Error at line '" ++ show l ++ "', column '" ++ show c ++ "'"
-
--- FIXME: Head causes errors if reaches EOF trying to match
-parseError :: Tokens -> a
-parseError p = throw (ParseException (tPosition (head p))) 
+getPos :: Token -> XY
+getPos tk = let (AlexPn _ x y) = tkPos tk in (x, y)
 
 -----------------------------------------------------------------
 -- Parsed Datatypes
@@ -108,6 +120,7 @@ data Prog  = Prog
            }
           deriving (Eq, Show)
 
+type XY      = (Int, Int)
 type Path    = String
 type TableID = String 
 type Vars    = [ Var ] 
@@ -121,9 +134,10 @@ type Stmts = [ Stmt ]
 data Stmt = Query (Maybe TableID) Vars Exp
           | Print TableID
           deriving (Eq, Show)
-          
+      
 data Exp = Conjunction Exp Exp
          | Equality Var Var
+         | NotEquality Var Var
          | Lookup TableID Vars
          | ExQual Vars Exp            
          deriving (Eq, Show)
