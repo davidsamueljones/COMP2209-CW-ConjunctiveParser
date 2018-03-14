@@ -76,7 +76,7 @@ runInterpreter (Prog is stmts) = do
 -- Process imports, placing updates in environment
 evalImports :: Env -> Imports -> IO (InterReturn Env)
 evalImports env []     =  return (pure env)
-evalImports env (t:ts) = do
+evalImports env ((t, pos):ts) = do
   res <- evalImport env t
   case res of
     Left e -> throwIO (IEImports e) -- rethrow up stack
@@ -102,7 +102,7 @@ evalImport env t = case t of
 -- Process statements, placing updates in environment
 evalStmts :: Env -> Stmts -> IO (InterReturn Env) 
 evalStmts env []        = return (pure env)
-evalStmts env (s:ss) = do
+evalStmts env ((s, pos):ss) = do
   res <- evalStmt env s
   case res of
     Left e -> throwIO (IEStmts e) -- rethrow up stack
@@ -112,7 +112,7 @@ evalStmts env (s:ss) = do
 -- Process statement, updating environment respectively
 evalStmt :: Env -> Stmt -> IO (InterReturn Env)
 evalStmt env s = case s of 
-  (Query store vs e) -> do
+  (Query store vs (e, pos)) -> do
     res <- evalExp env e
     case res of 
       Left e -> throwIO (IEStmt e) -- rethrow up stack
@@ -153,7 +153,7 @@ evalStmt env s = case s of
 evalExp :: Env -> Exp -> IO (InterReturn Env) 
 evalExp env e = case e of
 
-  Conjunction lExp rExp -> do
+  Conjunction (lExp, lPos) (rExp, rPos) -> do
     lRes <- evalExp env lExp
     case lRes of 
       Left e -> throwIO e -- rethrow up stack
@@ -215,12 +215,12 @@ evalExp env e = case e of
             let newEnv = env {tableState = mergedTable}
             return (pure newEnv)
 
-  ExQual vs e -> do
+  ExQual vs (exp, pos) -> do
     let res = addBoundVariables vs env
     case res of
       Left e -> throwIO e -- rethrow up stack
       Right envWithBounds -> do
-        res' <- evalExp envWithBounds e
+        res' <- evalExp envWithBounds exp
         case res' of
           Left e -> throwIO e -- rethrow up stack
           Right newEnv -> return (pure newEnv)
