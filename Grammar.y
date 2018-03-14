@@ -86,7 +86,28 @@ runLexAndParse s = do
 parseError :: Token -> Parser a
 parseError tk = do
   (AlexPn _ l c) <- getCurAlexPos
-  makeParseError $ "ERROR" ++ show tk ++ (show (l, c, "NO MESSSAGE")) -- TODO
+  let cla = tkClass tk
+  case cla of
+    (TAssign) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '::' Correct use is TABLE_NAME :: VARIABLES <- QUERY"
+    (TDot) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '.' Correct use is $ VAR . EXPRESSION"
+    (TSemicolon) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of ';' Correct use is at end of query or import"
+    (TComma) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of ',' Correct use is inbetween Variables" 
+    (TEqual) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '==' Correct use is VAR == VAR" 
+    (TNotEqual) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '!=' Correct use is VAR != VAR"
+    (TConjunction) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '^' Correct use is EXPRESSION ^ EXPRESSION" 
+    (TLeftArrow) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '<-' Correct use is VARIABLES <- QUERY" 
+    (TLParenthesis) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '(' Correct use is TABLE_NAME ( VARIABLES )" 
+    (TRParenthesis) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of ')' Correct use is TABLE_NAME ( VARIABLES )" 
+    (TExQual) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of '$' Correct use is $ VAR . EXPRESSION" 
+    (TImport) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of 'import' Correct use is import FILEPATH as TABLE_NAME;" 
+    (TAs) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of 'as' Correct use is FILEPATH as TABLE_NAME;" 
+    (TPrint) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of 'print' Correct use is print TABLE_NAME " 
+    (TTable t) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect placement of Table '" ++ t ++ "'" 
+    (TVar v) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect placement of Variable '" ++ v ++ "'" 
+    (t) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of token '" ++ t ++ "'"
+
+  
+  
 
 makeParseError = alexError
 
