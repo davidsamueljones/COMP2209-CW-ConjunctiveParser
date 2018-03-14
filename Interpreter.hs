@@ -181,7 +181,7 @@ evalExp env e = case e of
 -- Conjunction
 -----------------------------------------------------------------
 
-conjunction :: Table -> Table -> Table
+conjunction :: RowTable -> RowTable -> RowTable
 conjunction r1 r2 = removeDupCols combined
   where ids1 = (columnVars r1)
         ids2 = (columnVars r2)
@@ -189,7 +189,7 @@ conjunction r1 r2 = removeDupCols combined
         vars = getDupCols ids
         combined = (Table ids [a ++ b| a <- tableData r1, b <- tableData r2, sameVars vars ids1 ids2 a b])
                      
-combine :: Table -> Table -> Table
+combine :: RowTable -> RowTable -> RowTable
 combine r1 r2 = (Table ids [a ++ b| a <- tableData r1, b <- tableData r2])
   where ids = (columnVars r1) ++ (columnVars r2)
                         
@@ -208,7 +208,7 @@ getVar var ids row
 -- Equality
 -----------------------------------------------------------------
 
-equality :: Table -> Var -> Var -> InterReturn Table
+equality :: RowTable -> Var -> Var -> InterReturn RowTable
 equality table v1 v2
   | elem v1 ids && elem v2 ids = return ((Table ids [a | a <- rows, getVar v1 ids a == getVar v2 ids a]))
   | otherwise                  = throw IEVarNotFound
@@ -220,7 +220,7 @@ equality table v1 v2
 -----------------------------------------------------------------
 
 --Merges columns of a table in cases of repeated vars in columnVars
-mergeColumns :: Table -> Table
+mergeColumns :: RowTable -> RowTable
 mergeColumns t
   | getDupCols ids == [] = t
   | otherwise            = removeDupCols (Table ids [row|row <- rs, repeatsAreEqual ids row])
@@ -243,6 +243,7 @@ lookupTableData t ts = do
 
 -- Using a row table input and column data, make a table
 makeTable :: Vars -> TableData -> (Either InterException Table)
+makeTable vs []   = return $ Table vs []
 makeTable vs rows | length vs > length cols = throw IETooManyVars
                   | length vs < length cols = throw IENotEnoughVars
                   | otherwise               = return $ Table vs rows
@@ -266,7 +267,7 @@ addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
 -----------------------------------------------------------------
 
 -- Gets the requested columns in the requested order, sorting rows lexicographically
-makeOutputTable :: Vars -> Vars -> Table -> (InterReturn TableData) 
+makeOutputTable :: Vars -> Vars -> RowTable -> (InterReturn TableData) 
 makeOutputTable outVars boundVars table = do
   let notVarOutputs = [v | v <- outVars, not (v `elem` (columnVars table))]
   case notVarOutputs of
@@ -317,7 +318,7 @@ importTable f = do
       let tokenise = map parseCSVLine . lines
       return (pure (tokenise dat))              
                  
-parseCSVLine :: String -> Row
+parseCSVLine :: String -> [String]
 parseCSVLine [] = []
 parseCSVLine xs = map trim (splitOnComma xs)
 
@@ -348,21 +349,21 @@ getDupCols (x:xs)
     | otherwise = getDupCols xs
 
 -- Remove columns with the same ID (var name)
-removeDupCols :: Table -> Table
+removeDupCols :: RowTable -> RowTable
 removeDupCols rowTab = (Table newIds newRows)
                      where ids = columnVars rowTab
                            rows = tableData rowTab
                            newRows = [b| a<- rows, let b = removeDupCols' ids a ]
                            newIds = nub ids
                            
-removeDupCols' :: [String] -> [String] -> [String]
+removeDupCols' :: Vars -> Row -> Row
 removeDupCols' [] [] = []
 removeDupCols' (i:is) (r:rs) 
   | elem i is = removeDupCols' is rs
   | otherwise = [r] ++ removeDupCols' is rs
 
 -- Transpose but fails if lists are not all equal length
-transpose' :: [[a]] -> Either InterException [[a]]
+transpose' :: [[a]] -> InterReturn [[a]]
 transpose' xss | allLensSame xss = return (transpose xss)
 transpose' xss | otherwise       = throw IEUnequalLists
 

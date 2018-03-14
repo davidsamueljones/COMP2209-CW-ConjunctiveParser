@@ -23,25 +23,18 @@ interpretFile f = readFile f >>= interpretString
 
 interpretString :: String -> IO () 
 interpretString dat = do
-    -- Lex input into tokens
+    -- * Lex input into tokens * --
     let lexerResult = lexString dat
     exitIfError lexerResult
-    -- No lex error so use tokens as input for parser
+    -- * No lex error so use tokens as input for parser * --
     let tokens = fromRight [] lexerResult
-    --putStrLn $ show tokens
     parseResult <- runParse tokens
     exitIfError parseResult
-    -- No parse error so use AST for interpretation 
+    -- * No parse error so use AST for interpretation * --
     let ast = fromRight (Prog [] []) parseResult
-    --putStrLn $ show ast
     interResult <- runInterpreter ast
     exitIfError interResult
-    -- No interpret error
-    -- let output = fromRight "" interResult
-    -- putStrLn output
-    putStrLn "Interpretation Finished"
-    -- output <- runInterpreter ast
-    -- putStrLn output -- FIXME: Do interpretation
+    -- * Interpretation finished successfully * --
 
 exitIfError :: Show a => Either a b -> IO ()
 exitIfError res = when (isLeft res) $ die (getError res)
