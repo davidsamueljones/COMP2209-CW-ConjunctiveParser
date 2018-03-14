@@ -15,3 +15,5 @@ clean:
 	rm -f *.hi *.o
 	rm -f Tokens.hs
 	rm -f Grammar.hs
+	rm -f myinterpreter
+	rm -f myinterpreter.exe
