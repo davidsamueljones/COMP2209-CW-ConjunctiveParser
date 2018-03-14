@@ -79,7 +79,7 @@ evalImports env []     =  return (pure env)
 evalImports env ((t, pos):ts) = do
   res <- evalImport env t
   case res of
-    Left e -> throwIO (IEImports e) -- rethrow up stack
+    Left e -> throwIO (IEImport e pos) -- rethrow up stack
     Right newEnv -> do
       evalImports newEnv ts
 
@@ -89,11 +89,11 @@ evalImport env t = case t of
   Import p i -> do
     let findVar = find (\x -> storedTableID x == i) (storedTables env)
     case findVar of
-      Just _ -> throwIO (IEImport (IETableAlreadyDefined i))
+      Just _ -> throwIO (IETableAlreadyDefined i)
       Nothing -> do
         res <- importTable p
         case res of
-          Left e -> throwIO (IEImport e) -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right dat -> do
             let imported = StoredTable i dat
             let updatedEnv = env {storedTables = (imported:(storedTables env))}
@@ -105,7 +105,7 @@ evalStmts env []        = return (pure env)
 evalStmts env ((s, pos):ss) = do
   res <- evalStmt env s
   case res of
-    Left e -> throwIO (IEStmts e) -- rethrow up stack
+    Left e -> throwIO (IEStmt e pos) -- rethrow up stack
     Right newEnv -> do
       evalStmts newEnv ss
 
@@ -115,11 +115,11 @@ evalStmt env s = case s of
   (Query store vs (e, pos)) -> do
     res <- evalExp env e
     case res of 
-      Left e -> throwIO (IEStmt e) -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right env' -> do
         let res' = makeOutputTable vs (boundVars env') (tableState env')
         case res' of
-          Left e -> throwIO (IEStmt e) -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right table -> do
             case store of
               Nothing -> do
@@ -130,7 +130,7 @@ evalStmt env s = case s of
                 -- Store table for later use, not printing it
                 let findVar = find (\x -> storedTableID x == i) (storedTables env)
                 case findVar of
-                  Just _ -> throwIO $ (IEStmt (IETableAlreadyDefined i)) 
+                  Just _ -> throwIO $ (IETableAlreadyDefined i)
                   Nothing -> do
                     let store = StoredTable i table
                     let updatedEnv = env {storedTables = (store:(storedTables env))}
@@ -139,7 +139,7 @@ evalStmt env s = case s of
   (PrintTable t) -> do
     let res = lookupTableData t (storedTables env)
     case res of 
-      Left e -> throwIO (IEStmt e) -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right table -> do
         printTable table
         return (pure env)
@@ -434,11 +434,9 @@ allValsSame xs = all (== head xs) (tail xs)
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
-data InterException = IEImports InterException
-                    | IEImport InterException 
-                    | IEStmts InterException
-                    | IEStmt InterException
-                    | IEExp InterException
+data InterException = IEImport InterException XY
+                    | IEStmt InterException XY
+                    | IEExp InterException XY 
                     | IEUnequalLists
                     | IEReadError IOError
                     | IETableNotFound TableID
