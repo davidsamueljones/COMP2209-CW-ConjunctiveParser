@@ -38,11 +38,19 @@ data StoredTable  = StoredTable
                   deriving (Show, Eq)
 
 -- Table with data associated to column variables
--- It is not enforced that data is stored in rows or columns
-type Row = [String]
-type TableData = [[String]]    
+-- It is not enforced that data is stored in rows or columns 
 data Table = Table { columnVars :: Vars, tableData :: TableData }
          deriving (Show, Eq)
+
+-- Unstrict identifiers for function clarity 
+type Row         = [String]
+type RowTable    = Table 
+type Column      = [String]
+type ColumnTable = Table
+type TableData   = [[String]]  
+
+-- Return type for functions that holds a given type or an interpreter Exception
+type InterReturn a = Either InterException a
 
 -----------------------------------------------------------------
 -- Interpreter Control
@@ -52,7 +60,7 @@ data Table = Table { columnVars :: Vars, tableData :: TableData }
 -- This is built up in a global environment so all queries have
 -- knowledge of all base tables and all queries have knowledge
 -- of previous stored queries.
-runInterpreter :: Prog -> IO (Either InterException String)
+runInterpreter :: Prog -> IO (InterReturn String)
 runInterpreter (Prog is stmts) = do
   -- Initiate environment with imported base tables
   resImports <- evalImports initEnv is
@@ -66,7 +74,7 @@ runInterpreter (Prog is stmts) = do
 
 -- Process imports by importing data and creating base tables
 -- in environment
-evalImports :: Env -> Imports -> IO (Either InterException Env)
+evalImports :: Env -> Imports -> IO (InterReturn Env)
 evalImports env []     =  return (pure env)
 evalImports env (t:ts) = case t of
   Import p i -> do
@@ -80,7 +88,7 @@ evalImports env (t:ts) = case t of
         evalImports updatedEnv ts
 
 -- Process statements, placing updates in environment
-evalStmts :: Env -> Stmts -> IO (Either InterException Env) 
+evalStmts :: Env -> Stmts -> IO (InterReturn Env) 
 evalStmts env []        = return (pure env)
 evalStmts env (s:ss) = do
     res <- evalStmt env s
@@ -90,7 +98,7 @@ evalStmts env (s:ss) = do
         evalStmts newEnv ss
 
 -- Process statement, updating environment respectively
-evalStmt :: Env -> Stmt -> IO (Either InterException Env)
+evalStmt :: Env -> Stmt -> IO (InterReturn Env)
 evalStmt env s = case s of 
   (Query store vs e) -> do
     res <- evalExp env e
@@ -121,7 +129,7 @@ evalStmt env s = case s of
         return (pure env)
 
 -- Process expression, updating environment respectively
-evalExp :: Env -> Exp -> IO (Either InterException Env) 
+evalExp :: Env -> Exp -> IO (InterReturn Env) 
 evalExp env e = case e of
 
   Conjunction lExp rExp -> do
@@ -185,22 +193,22 @@ combine :: Table -> Table -> Table
 combine r1 r2 = (Table ids [a ++ b| a <- tableData r1, b <- tableData r2])
   where ids = (columnVars r1) ++ (columnVars r2)
                         
-sameVars :: [Var] -> [String] -> [String] -> Row -> Row -> Bool
+sameVars :: Vars -> Vars -> Vars -> Row -> Row -> Bool
 sameVars vars ids1 ids2 row1 row2 = and [a | b <- vars, let a = sameVar b ids1 ids2 row1 row2]
             
-sameVar :: Var -> [String] -> [String] -> Row -> Row -> Bool
+sameVar :: Var -> Vars -> Vars -> Row -> Row -> Bool
 sameVar var ids1 ids2 row1 row2 = (getVar var ids1 row1) == (getVar var ids2 row2)
 
-getVar :: Var -> [String] -> Row -> Var
+getVar :: Var -> Vars -> Row -> Var
 getVar var ids row
   | elem var ids = row !! fromJust (elemIndex var ids)
-  | otherwise          = "" --TODO: Handle this case if required
+  | otherwise          = ""
 
 -----------------------------------------------------------------
 -- Equality
 -----------------------------------------------------------------
 
-equality :: Table -> Var -> Var -> Either InterException Table
+equality :: Table -> Var -> Var -> InterReturn Table
 equality table v1 v2
   | elem v1 ids && elem v2 ids = return ((Table ids [a | a <- rows, getVar v1 ids a == getVar v2 ids a]))
   | otherwise                  = throw IEVarNotFound
@@ -226,7 +234,7 @@ mergeColumns t
 
 
 -- Retrieve a given table from memory 
-lookupTableData :: Var -> [StoredTable] -> (Either InterException TableData) 
+lookupTableData :: Var -> [StoredTable] -> (InterReturn TableData) 
 lookupTableData t ts = do
   let lkup = find (\x -> storedTableID x == t) ts
   case lkup of
@@ -244,8 +252,8 @@ makeTable vs rows | length vs > length cols = throw IETooManyVars
 -- ExQual
 -----------------------------------------------------------------
 
-addBoundVariables :: Vars -> Env -> (Either InterException Env)
-addBoundVariables []     env = Right (env)
+addBoundVariables :: Vars -> Env -> (InterReturn Env)
+addBoundVariables []     env = return env
 addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
   Nothing ->  case (find (== v) (columnVars (tableState env))) of
                 Nothing -> let newEnv = env {boundVars = (v:(boundVars env))} in
@@ -254,11 +262,11 @@ addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
   Just _  ->  throw IEVarAlreadyBound 
 
 -----------------------------------------------------------------
--- Query Table Output 
+-- Table Output 
 -----------------------------------------------------------------
 
 -- Gets the requested columns in the requested order, sorting rows lexicographically
-makeOutputTable :: Vars -> Vars -> Table -> (Either InterException TableData) 
+makeOutputTable :: Vars -> Vars -> Table -> (InterReturn TableData) 
 makeOutputTable outVars boundVars table = do
   let notVarOutputs = [v | v <- outVars, not (v `elem` (columnVars table))]
   case notVarOutputs of
@@ -283,12 +291,24 @@ makeOutputTable outVars boundVars table = do
             let sorted   = sortOn (\r -> concat r) rows
             return sorted                 
 
+-- Format table as a csv string
+table2csv :: TableData -> Maybe String
+table2csv [[]] = Nothing
+table2csv xs   = Just  $ unlines (map (intercalate ",") xs)
+ 
+-- Print table in csv form as a string                  
+printTable :: TableData -> IO ()
+printTable t = let res = table2csv t in
+  case res of
+    Nothing -> return ()
+    Just dat -> putStr dat
+
 -----------------------------------------------------------------
 -- Table Importer
 -----------------------------------------------------------------
 
 -- Imports a csv file into zipped columns
-importTable :: FilePath -> IO (Either InterException TableData)
+importTable :: FilePath -> IO (InterReturn TableData)
 importTable f = do 
   res <- try $ readFile f :: IO (Either IOError String)
   case res of
@@ -297,17 +317,7 @@ importTable f = do
       let tokenise = map parseCSVLine . lines
       return (pure (tokenise dat))              
                  
------------------------------------------------------------------
--- 'Simple' CSV Line Parser
------------------------------------------------------------------
--- Allows for CSV lines to be split with any characters between commas; 
--- this includes commas provided they are escaped with a backslash. 
--- Backslashes must also be escaped for this reason. Escapes also allow 
--- forced white space at the beginning of fields FIXME!!!. All other escapes 
--- are ignored. 
-
-
-parseCSVLine :: String -> [String]
+parseCSVLine :: String -> Row
 parseCSVLine [] = []
 parseCSVLine xs = map trim (splitOnComma xs)
 
@@ -364,16 +374,6 @@ allLensSame xss = allValsSame $ map length xss
 allValsSame :: Eq a =>[a] -> Bool
 allValsSame xs = all (== head xs) (tail xs)
 
-table2csv :: TableData -> Maybe String
-table2csv [[]] = Nothing
-table2csv xs   = Just  $ unlines (map (intercalate ",") xs)
-                   
-printTable :: TableData -> IO ()
-printTable t = let res = table2csv t in
-  case res of
-    Nothing -> return ()
-    Just dat -> putStr dat
-
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
@@ -394,13 +394,3 @@ data InterException = IEImport InterException
                     deriving (Show)
 
 instance Exception InterException
-
------------------------------------------------------------------
--- TODO!!!
------------------------------------------------------------------
-
-
--- http://matt.might.net/articles/cek-machines/
--- http://matt.might.net/articles/cesk-machines/
--- https://wiki.haskell.org/wikiupload/c/c6/ICMI45-paper-en.pdf
-
