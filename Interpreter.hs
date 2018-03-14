@@ -93,11 +93,13 @@ evalStmt env s = case s of
       Left e -> throw e -- rethrow up stack
       Right env' -> do
         let res' = makeOutputTable vs (tableState env')
+        let res' = makeOutputTable vs (boundVars env') (tableState env')
         case res' of
           Left e -> throw e -- rethrow up stack
           Right table -> do
             case store of
               Nothing -> do
+                -- Print table but do not store it for later use
                 printTable table
                 return (Right env)
               Just i -> do
@@ -106,8 +108,13 @@ evalStmt env s = case s of
                 return (Right updatedEnv)
 
   (Print t) -> return (Right env) --TODO
+  (Print t) -> do
+      Left e -> throw e -- rethrow up stack
+      Right table -> do
+        printTable table
+        return (Right env)
 
--- Process expression, updating environment respectively -- FIXME FINISH
+-- Process expression, updating environment respectively
 evalExp :: Env -> Exp -> IO (Either InterException Env) 
 evalExp env e = case e of
 
@@ -138,7 +145,7 @@ evalExp env e = case e of
     case res of
       Left e -> throw e -- rethrow up stack
       Right dat -> do 
-        let res' = assignColumnVars vs dat
+        let res' = makeTable vs dat
         case res' of
           Left e -> throw e -- rethrow up stack
           Right table -> do 
@@ -156,13 +163,6 @@ evalExp env e = case e of
           Left e -> throw e -- rethrow up stack
           Right newEnv -> return (Right newEnv)
 
-
--- TODO: 
--- * Conjunction like thing of variables and table (taking away bound variables)
--- * Sort lexicographically?
--- * Order as outputs
--- * Throw errors for: * LHS free variables not using all free variables
---                     * LHS has bound variables in
 
 -----------------------------------------------------------------
 -- Conjunction
@@ -206,19 +206,6 @@ equality table v1 v2
 -- Lookup
 -----------------------------------------------------------------
 
-lookupTableData :: Var -> [TableStore] -> (Either InterException Table) 
-lookupTableData x []                      = throw $ IETableNotFound x
-lookupTableData x ((TableStore y dat):ts) | x == y    = Right dat
-lookupTableData x (_:ts)                  | otherwise = lookupTableData x ts
-
-assignColumnVars :: Vars -> Table -> (Either InterException Table)
-assignColumnVars = assignColumnVars' []
-
-assignColumnVars' :: Table -> Vars -> Table -> (Either InterException Table)
-assignColumnVars' os []     []     = Right os
-assignColumnVars' _  []     _      = throw IENotEnoughVars
-assignColumnVars' _  _      []     = throw IETooManyVars
---assignColumnVars' os (v:vs) (t:ts) = assignColumnVars' ((Column v t):os) vs ts
 
 --Merges columns of a table in cases of repeated vars in columnVars
 mergeColumns :: Table -> Table
@@ -233,6 +220,20 @@ mergeColumns t
           | elem x xs = (y == ys !! fromJust (elemIndex x xs)) && repeatsAreEqual xs ys
           | otherwise = repeatsAreEqual xs ys
 
+-- Retrieve a given table from memory 
+lookupTableData :: Var -> [StoredTable] -> (Either InterException TableData) 
+lookupTableData t ts = do
+  let lkup = find (\x -> storedTableID x == t) ts
+  case lkup of
+    Nothing -> throw $ IETableNotFound t
+    Just (StoredTable _ dat) -> return dat
+
+-- Using a row table input and column data, make a table
+makeTable :: Vars -> TableData -> (Either InterException Table)
+makeTable vs rows | length vs > length cols = throw IETooManyVars
+                  | length vs < length cols = throw IENotEnoughVars
+                  | otherwise               = return $ Table vs rows
+                  where cols = transpose rows
 -----------------------------------------------------------------
 -- ExQual
 -----------------------------------------------------------------
@@ -245,6 +246,18 @@ addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
                            addBoundVariables vs newEnv
                 Just _  -> throw IEVarExistsNotBound
   Just _  ->  throw IEVarAlreadyBound 
+
+        [] -> do
+          -- All output variables are not bound
+          let freeVariables = filter (\x -> not (x `elem` boundVars)) (columnVars table)
+          let missingVariables = [v | v <- freeVariables, not (v `elem` outVars)]
+          case missingVariables of
+            -- All free variables are in output
+            let columns  = transpose (tableData table) 
+            let filtered = filter (\x -> fst x `elem` outVars) (zip (columnVars table) columns)
+            let ordered  = sortOn (\x -> lookup (fst x) (zip outVars [0..])) filtered 
+            let rows     = transpose (map snd ordered)
+            let sorted   = sortOn (\r -> concat r) rows
 
 -----------------------------------------------------------------
 -- Table Importer
@@ -265,20 +278,6 @@ importTable f = do
 -----------------------------------------------------------------
 
 -- TODO: Doesn't check boundness?
--- Gets the requested columns in the requested order, rows sorted lexicographically
---makeOutputTable :: [Var] -> ColumnTable -> (Either InterException Table)
---makeOutputTable xs cls
---  | length columns == length xs = Right (map columnData columns)
---  | otherwise                   = throw IEVarNotFound
---  where ids = map columnID cls
---        columns = lexiSort [fst colbool| a <- xs, let colbool = getColumn a cls, snd colbool == True]
-  
---lexiSort :: ColumnTable -> ColumnTable
---lexiSort a = row2col $ sorted
---           where rows = col2row a
---                 sorted = sortOn (\a -> concat $ rowData a) rows
-
-                 
                  
 -----------------------------------------------------------------
 -- 'Simple' CSV Line Parser
@@ -289,10 +288,7 @@ importTable f = do
 -- forced white space at the beginning of fields FIXME!!!. All other escapes 
 -- are ignored. 
 
-parseCSVLine :: String -> [String]
-parseCSVLine xs = csvSplit xs 
 
-csvSplit :: String -> [ String ]
 csvSplit [] = []
 csvSplit xs = map trim (splitOnComma xs)
 
