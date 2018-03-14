@@ -27,7 +27,7 @@ tokens :-
   
   -- String handling
   <0>       \"                     { beginString  } -- "
-  <strSC>   \\[\"]                 { escapeString } -- "
+  <strSC>   \\[\"n]                { escapeString } -- "
   <strSC>   \"                     { finishString } -- "
   <strSC>   (\r?\n)                ; -- Ignore line breaks
   <strSC>   .                      { storeString  }  
@@ -158,6 +158,7 @@ escapeString i l = do
   let s = getMatch i l
   case s of
     "\\\"" -> addCharToLexerStringValue '"'
+    "\\n"  -> addCharToLexerStringValue '\n'
   skip i l
 
 -- Stores a string to the state's string buffer a character at a time [No Token]
