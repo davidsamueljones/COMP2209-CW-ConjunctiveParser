@@ -1,13 +1,11 @@
 module Main where
-import Tokens
 import Grammar
-import Interpreter
+import Interpreter (runInterpreter)
 
-import Data.Either
-import System.Environment
-import Control.Exception
-import Control.Monad
-import System.Exit
+import Data.Either        (fromRight, isLeft)
+import System.Environment (getArgs)
+import Control.Monad      (when)
+import System.Exit        (die)
 
 main :: IO ()
 main = do args <- getArgs

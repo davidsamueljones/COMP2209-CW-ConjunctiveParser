@@ -1,7 +1,6 @@
 {
 module Grammar where
 import Tokens
-import Control.Exception
 }
 
 %name runParser
