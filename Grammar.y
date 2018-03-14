@@ -42,28 +42,29 @@ Prog     : Imports Stmts                        { Prog $1 $2 }
 -- Store imports as a list
 Imports  : Import ';' Imports                  { $1:$3 } 
          | {- empty -}                         { [] }
-Import   : import STRING as TABLE              { (Import (tkSVal $2) (tkSVal $4)) }
+Import   : import STRING as TABLE              { (Import (tkSVal $2) (tkSVal $4)       , getPos $1) }
 
 -- Store statements as a list
 Stmts    : Stmt ';' Stmts                      { $1:$3 }
          | {- empty -}                         { [] }
-Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just (tkSVal $1)) $3 $5) }
-         | Vars '<-' Exp                       { (Query (Nothing) $1 $3) }
-         | print TABLE                         { (PrintTable  (tkSVal $2)) }
-         | print STRING                        { (PrintString (tkSVal $2)) }
+Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just (tkSVal $1)) (fst $3) $5 , getPos $1) }
+         | Vars '<-' Exp                       { (Query Nothing (fst $1) $3            , getPos' $1 $2) }
+         | print TABLE                         { (PrintTable  (tkSVal $2)              , getPos $1) }
+         | print STRING                        { (PrintString (tkSVal $2)              , getPos $1) }
 
 -- Store variables as a list
-Vars     : VAR MoreVars                        { (tkSVal $1):$2 }
-         | {- empty -}                         { [] }
+Vars     : VAR MoreVars                        { ((tkSVal $1):$2, getPos $1) }
+         | {- empty -}                         { ([], noTokPos)  }
 MoreVars : ',' VAR MoreVars                    { (tkSVal $2):$3 }
          | {- empty -}                         { [] }
 
 -- Use tree structure for expressions
-Exp      : TABLE '(' Vars ')'                  { Lookup (tkSVal $1) $3 }
-         | VAR '==' VAR                        { Equality (tkSVal $1) (tkSVal $3) }
-         | VAR '!=' VAR                        { NotEquality (tkSVal $1) (tkSVal $3) }
-         | '$' Vars '.' Exp                    { eqFlatten (ExQual $2 $4) }
-         | Exp '^' Exp                         { Conjunction $1 $3 }
+Exp      : TABLE '(' Vars ')'                  { (Lookup (tkSVal $1) (fst $3)          , getPos $1) }
+         | VAR '==' VAR                        { (Equality (tkSVal $1) (tkSVal $3)     , getPos $1) }
+         | VAR '!=' VAR                        { (NotEquality (tkSVal $1) (tkSVal $3)  , getPos $1) }
+         | '$' Vars '.' Exp                    { (ExQual (fst $2) $4                   , getPos $1) }
+         | Exp '^' Exp                         { (Conjunction $1 $3                    , snd $1) }
+
 
 {
 
@@ -106,30 +107,24 @@ parseError tk = do
     (TVar v) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect placement of Variable '" ++ v ++ "'" 
     (t) ->   makeParseError $ "ERROR " ++ show (l, c) ++ ": Incorrect use of token '" ++ show t ++ "'"
 
-  
-  
-
 makeParseError = alexError
 
 -----------------------------------------------------------------
 -- Parsing Helper Functions
 -----------------------------------------------------------------
 
--- Function to flatten vars from consecutive ExQual parse results 
--- into a single parse result simplifying AST
-eqFlatten :: Exp -> Exp
-eqFlatten e@(ExQual _ _) = (ExQual (eqVars e) (eqNext e))
-  where
-    eqVars :: Exp -> Vars
-    eqVars (ExQual vs e@(ExQual _ _)) =  vs ++ eqVars e
-    eqVars (ExQual vs _) = vs
-    eqNext :: Exp -> Exp
-    eqNext (ExQual vs e@(ExQual _ _)) = eqNext e
-    eqNext (ExQual vs e) = e
-eqFlatten e = e
-
+-- Get position of a token as XY coordinates 
 getPos :: Token -> XY
 getPos tk = let (AlexPn _ x y) = tkPos tk in (x, y)
+
+-- Try and retrieve from existing position element, else get from backup 
+getPos' :: (a, XY) -> Token -> XY
+getPos' (_, xy) _  | xy /= noTokPos = xy 
+getPos' _       tk = getPos tk
+
+-- Position if no start position could be identified
+noTokPos :: XY
+noTokPos = (-1, -1)
 
 -----------------------------------------------------------------
 -- Parsed Datatypes
@@ -149,21 +144,24 @@ type TableID = String
 type Vars    = [ Var ] 
 type Var     = String
 
-type Imports = [ Import ]
+type Imports = [ PImport ]
+type PImport = (Import, XY)
 data Import  = Import Path TableID
                deriving (Eq, Show)
  
-type Stmts = [ Stmt ]
-data Stmt = Query (Maybe TableID) Vars Exp
+type Stmts = [ PStmt ]
+type PStmt = (Stmt, XY)
+data Stmt = Query (Maybe TableID) Vars PExp
           | PrintTable TableID
           | PrintString String
           deriving (Eq, Show)
-      
-data Exp = Conjunction Exp Exp
+  
+type PExp = (Exp, XY)    
+data Exp = Conjunction PExp PExp
          | Equality Var Var
          | NotEquality Var Var
          | Lookup TableID Vars
-         | ExQual Vars Exp            
+         | ExQual Vars PExp            
          deriving (Eq, Show)
 
 }
