@@ -67,7 +67,7 @@ runInterpreter (Prog is stmts) = do
 -- Process imports by importing data and creating base tables
 -- in environment
 evalImports :: Env -> Imports -> IO (Either InterException Env)
-evalImports env []     =  return (Right env)
+evalImports env []     =  return (pure env)
 evalImports env (t:ts) = case t of
   Import p i -> do
     -- TODO: Error for table already exists
@@ -81,7 +81,7 @@ evalImports env (t:ts) = case t of
 
 -- Process statements, placing updates in environment
 evalStmts :: Env -> Stmts -> IO (Either InterException Env) 
-evalStmts env []        = return (Right env)
+evalStmts env []        = return (pure env)
 evalStmts env (s:ss) = do
     res <- evalStmt env s
     case res of
@@ -105,12 +105,12 @@ evalStmt env s = case s of
               Nothing -> do
                 -- Print table but do not store it for later use
                 printTable table
-                return (Right env)
+                return (pure env)
               Just i -> do
                 -- Store table for later use, not printing it
                 let store = StoredTable i table -- TODO, throw store error if table exists
                 let updatedEnv = env {storedTables = (store:(storedTables env))}
-                return (Right updatedEnv)
+                return (pure updatedEnv)
 
   (Print t) -> do
     let res = lookupTableData t (storedTables env)
@@ -118,7 +118,7 @@ evalStmt env s = case s of
       Left e -> throw e -- rethrow up stack
       Right table -> do
         printTable table
-        return (Right env)
+        return (pure env)
 
 -- Process expression, updating environment respectively
 evalExp :: Env -> Exp -> IO (Either InterException Env) 
@@ -135,7 +135,7 @@ evalExp env e = case e of
           Right rEnv -> do
             let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
             let newEnv = rEnv {tableState = joinedTable} 
-            return (Right newEnv)
+            return (pure newEnv)
             
   Equality v1 v2 -> do
     let currentTable = tableState env 
@@ -144,7 +144,7 @@ evalExp env e = case e of
       Left e -> throw e -- throw up the stack (IEVarNotFound)
       Right table -> do
         let newEnv = env {tableState = table}
-        return (Right newEnv)
+        return (pure newEnv)
     
   Lookup t vs -> do
     let res = lookupTableData t (storedTables env)
@@ -157,7 +157,7 @@ evalExp env e = case e of
           Right table -> do 
             let mergedTable = mergeColumns table
             let newEnv = env {tableState = mergedTable}
-            return (Right newEnv)
+            return (pure newEnv)
 
   ExQual vs e -> do
     let res = addBoundVariables vs env
@@ -167,7 +167,7 @@ evalExp env e = case e of
         res' <- evalExp envWithBounds e
         case res' of
           Left e -> throw e -- rethrow up stack
-          Right newEnv -> return (Right newEnv)
+          Right newEnv -> return (pure newEnv)
 
 -----------------------------------------------------------------
 -- Conjunction
@@ -202,7 +202,7 @@ getVar var ids row
 
 equality :: Table -> Var -> Var -> Either InterException Table
 equality table v1 v2
-  | elem v1 ids && elem v2 ids = Right ((Table ids [a | a <- rows, getVar v1 ids a == getVar v2 ids a]))
+  | elem v1 ids && elem v2 ids = return ((Table ids [a | a <- rows, getVar v1 ids a == getVar v2 ids a]))
   | otherwise                  = throw IEVarNotFound
   where rows = tableData table
         ids = columnVars table
@@ -295,7 +295,7 @@ importTable f = do
     Left e -> throw (IEReadError e)
     Right dat -> do
       let tokenise = map parseCSVLine . lines
-      return (Right (tokenise dat))              
+      return (pure (tokenise dat))              
                  
 -----------------------------------------------------------------
 -- 'Simple' CSV Line Parser
@@ -353,7 +353,7 @@ removeDupCols' (i:is) (r:rs)
 
 -- Transpose but fails if lists are not all equal length
 transpose' :: [[a]] -> Either InterException [[a]]
-transpose' xss | allLensSame xss = Right (transpose xss)
+transpose' xss | allLensSame xss = return (transpose xss)
 transpose' xss | otherwise       = throw IEUnequalLists
 
 -- Get length of all rows, true if all equal
