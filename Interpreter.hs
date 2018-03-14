@@ -373,7 +373,11 @@ importTable f = do
     Left e -> throwIO (IEReadError e)
     Right dat -> do
       let tokenise = map parseCSVLine . lines
-      return (pure (tokenise dat))              
+      let table = tokenise dat
+      let valid = allLensSame table
+      case valid of
+        False -> throwIO (IEUnequalLists)
+        True -> return (pure (table))              
                  
 parseCSVLine :: String -> [String]
 parseCSVLine [] = []
