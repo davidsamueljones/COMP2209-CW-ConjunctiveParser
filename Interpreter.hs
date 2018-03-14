@@ -355,7 +355,7 @@ removeDupCols rowTab = (Table newIds newRows)
                            newRows = [b| a<- rows, let b = removeDupCols' ids a ]
                            newIds = nub ids
                            
-removeDupCols' :: RowTable -> RowTable -> RowTable
+removeDupCols' :: Vars -> Row -> Row
 removeDupCols' [] [] = []
 removeDupCols' (i:is) (r:rs) 
   | elem i is = removeDupCols' is rs
