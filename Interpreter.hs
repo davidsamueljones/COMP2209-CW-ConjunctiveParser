@@ -137,13 +137,23 @@ evalExp env e = case e of
     case lRes of 
       Left e -> throw e -- rethrow up stack
       Right lEnv -> do
-        rRes <- evalExp lEnv rExp
-        case rRes of 
-          Left e -> throw e -- rethrow up stack
-          Right rEnv -> do
-            let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
-            let newEnv = rEnv {tableState = joinedTable} 
-            return (pure newEnv)
+        case rExp of
+        
+          (Equality v1 v2) -> do 
+            rRes <- evalExp lEnv (Equality v1 v2)
+            case rRes of 
+              Left e -> throw e -- rethrow up stack
+              Right rEnv -> do
+                return (pure rEnv)            
+        
+          rEx -> do
+            rRes <- evalExp lEnv rEx
+            case rRes of 
+              Left e -> throw e -- rethrow up stack
+              Right rEnv -> do
+                let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
+                let newEnv = rEnv {tableState = joinedTable} 
+                return (pure newEnv)
             
   Equality v1 v2 -> do
     let currentTable = tableState env 
@@ -152,6 +162,7 @@ evalExp env e = case e of
       Left e -> throw e -- throw up the stack (IEVarNotFound)
       Right table -> do
         let newEnv = env {tableState = table}
+
         return (pure newEnv)
     
   Lookup t vs -> do
