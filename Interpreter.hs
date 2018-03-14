@@ -130,13 +130,18 @@ evalStmt env s = case s of
                     let updatedEnv = env {storedTables = (store:(storedTables env))}
                     return (pure updatedEnv)
 
-  (Print t) -> do
+  (PrintTable t) -> do
     let res = lookupTableData t (storedTables env)
     case res of 
       Left e -> throwIO e -- rethrow up stack
       Right table -> do
         printTable table
         return (pure env)
+
+  (PrintString s) -> do
+    putStrLn s
+    return (pure env)
+
 
 -- Process expression, updating environment respectively
 evalExp :: Env -> Exp -> IO (InterReturn Env) 

@@ -48,7 +48,8 @@ Stmts    : Stmt ';' Stmts                      { $1:$3 }
          | {- empty -}                         { [] }
 Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just $1) $3 $5) }
          | Vars '<-' Exp                       { (Query (Nothing) $1 $3) }
-         | print TABLE                         { (Print $2) }
+         | print TABLE                         { (PrintTable $2) }
+         | print STRING                        { (PrintString $2) }
 
 -- Store variables as a list
 Vars     : VAR MoreVars                        { $1:$2 }
@@ -132,7 +133,8 @@ data Import  = Import Path TableID
  
 type Stmts = [ Stmt ]
 data Stmt = Query (Maybe TableID) Vars Exp
-          | Print TableID
+          | PrintTable TableID
+          | PrintString String
           deriving (Eq, Show)
       
 data Exp = Conjunction Exp Exp
