@@ -23,5 +23,6 @@ cabal.project.local
 Tokens.hs
 Grammar.hs
 
-# Compiled interpreter
+# Compiled interpreters
 myinterpreter
+myinterpreter.exe
