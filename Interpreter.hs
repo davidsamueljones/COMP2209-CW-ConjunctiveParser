@@ -76,10 +76,10 @@ runInterpreter (Prog is stmts) = do
 -- Process imports, placing updates in environment
 evalImports :: Env -> Imports -> IO (InterReturn Env)
 evalImports env []     =  return (pure env)
-evalImports env (t:ts) = do
+evalImports env ((t, pos):ts) = do
   res <- evalImport env t
   case res of
-    Left e -> throwIO (IEImports e) -- rethrow up stack
+    Left e -> throwIO (IEImport e pos) -- rethrow up stack
     Right newEnv -> do
       evalImports newEnv ts
 
@@ -89,11 +89,11 @@ evalImport env t = case t of
   Import p i -> do
     let findVar = find (\x -> storedTableID x == i) (storedTables env)
     case findVar of
-      Just _ -> throwIO (IEImport (IETableAlreadyDefined i))
+      Just _ -> throwIO (IETableAlreadyDefined i)
       Nothing -> do
         res <- importTable p
         case res of
-          Left e -> throwIO (IEImport e) -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right dat -> do
             let imported = StoredTable i dat
             let updatedEnv = env {storedTables = (imported:(storedTables env))}
@@ -102,24 +102,24 @@ evalImport env t = case t of
 -- Process statements, placing updates in environment
 evalStmts :: Env -> Stmts -> IO (InterReturn Env) 
 evalStmts env []        = return (pure env)
-evalStmts env (s:ss) = do
+evalStmts env ((s, pos):ss) = do
   res <- evalStmt env s
   case res of
-    Left e -> throwIO (IEStmts e) -- rethrow up stack
+    Left e -> throwIO (IEStmt e pos) -- rethrow up stack
     Right newEnv -> do
       evalStmts newEnv ss
 
 -- Process statement, updating environment respectively
 evalStmt :: Env -> Stmt -> IO (InterReturn Env)
 evalStmt env s = case s of 
-  (Query store vs e) -> do
+  (Query store vs (e, pos)) -> do
     res <- evalExp env e
     case res of 
-      Left e -> throwIO (IEStmt e) -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right env' -> do
         let res' = mkOutputTable vs (boundVars env') (tableState env')
         case res' of
-          Left e -> throwIO (IEStmt e) -- rethrow up stack
+          Left e -> throwIO e -- rethrow up stack
           Right table -> do
             case store of
               Nothing -> do
@@ -130,7 +130,7 @@ evalStmt env s = case s of
                 -- Store table for later use, not printing it
                 let findVar = find (\x -> storedTableID x == i) (storedTables env)
                 case findVar of
-                  Just _ -> throwIO $ (IEStmt (IETableAlreadyDefined i)) 
+                  Just _ -> throwIO $ (IETableAlreadyDefined i)
                   Nothing -> do
                     let store = StoredTable i table
                     let updatedEnv = env {storedTables = (store:(storedTables env))}
@@ -139,7 +139,7 @@ evalStmt env s = case s of
   (PrintTable t) -> do
     let res = lookupTableData t (storedTables env)
     case res of 
-      Left e -> throwIO (IEStmt e) -- rethrow up stack
+      Left e -> throwIO e -- rethrow up stack
       Right table -> do
         printTable table
         return (pure env)
@@ -153,7 +153,7 @@ evalStmt env s = case s of
 evalExp :: Env -> Exp -> IO (InterReturn Env) 
 evalExp env e = case e of
 
-  Conjunction lExp rExp -> do
+  Conjunction (lExp, lPos) (rExp, rPos) -> do
     lRes <- evalExp env lExp
     case lRes of 
       Left e -> throwIO e -- rethrow up stack
@@ -215,12 +215,12 @@ evalExp env e = case e of
             let newEnv = env {tableState = mergedTable}
             return (pure newEnv)
 
-  ExQual vs e -> do
+  ExQual vs (exp, pos) -> do
     let res = addBoundVariables vs env
     case res of
       Left e -> throwIO e -- rethrow up stack
       Right envWithBounds -> do
-        res' <- evalExp envWithBounds e
+        res' <- evalExp envWithBounds exp
         case res' of
           Left e -> throwIO e -- rethrow up stack
           Right newEnv -> return (pure newEnv)
@@ -446,11 +446,6 @@ removeDupCols' (i:is) (r:rs)
   | elem i is = removeDupCols' is rs
   | otherwise = [r] ++ removeDupCols' is rs
 
--- Transpose but fails if lists are not all equal length
-transpose' :: [[a]] -> InterReturn [[a]]
-transpose' xss | allLensSame xss = return (transpose xss)
-transpose' xss | otherwise       = throw IEUnequalLists
-
 -- Get length of all rows, true if all equal
 allLensSame :: [[a]] -> Bool
 allLensSame xss = allValsSame $ map length xss
@@ -462,11 +457,10 @@ allValsSame xs = all (== head xs) (tail xs)
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
-data InterException = IEImports InterException
-                    | IEImport InterException 
-                    | IEStmts InterException
-                    | IEStmt InterException
-                    | IEUnequalLists -- DO WE NEED?
+data InterException = IEImport InterException XY
+                    | IEStmt InterException XY
+                    | IEExp InterException XY 
+                    | IEUnequalLists
                     | IEReadError IOError
                     | IETableNotFound TableID
                     | IETableAlreadyDefined TableID
