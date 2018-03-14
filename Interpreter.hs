@@ -65,12 +65,15 @@ runInterpreter (Prog is stmts) = do
   -- Initiate environment with imported base tables
   resImports <- evalImports initEnv is
   case resImports of
-    Left e -> throw e -- rethrow up stack
+    Left e -> throw (IEImport e) -- rethrow up stack
     Right envImports -> do
       -- No import errors, do queries
       resStmts <- evalStmts envImports stmts
+      case resStmts of
+        Left e -> throw (IEQuery e)
+        Right _ -> return (Right "")
       -- TODO : Error handling
-      return (Right "")
+
 
 -- Process imports by importing data and creating base tables
 -- in environment
@@ -122,7 +125,7 @@ evalStmt env s = case s of
                 case findVar of
                   Just _ -> throw $ IETableAlreadyDefined i --If A table is already defined under that name
                   Nothing -> do
-                    let store = StoredTable i table -- TODO, throw store error if table exists
+                    let store = StoredTable i table
                     let updatedEnv = env {storedTables = (store:(storedTables env))}
                     return (pure updatedEnv)
 
@@ -150,7 +153,14 @@ evalExp env e = case e of
             case rRes of 
               Left e -> throw e -- rethrow up stack
               Right rEnv -> do
-                return (pure rEnv)            
+                return (pure rEnv)  
+
+          (NotEquality v1 v2) -> do 
+            rRes <- evalExp lEnv (NotEquality v1 v2)
+            case rRes of 
+              Left e -> throw e -- rethrow up stack
+              Right rEnv -> do
+                return (pure rEnv)                  
         
           rEx -> do
             rRes <- evalExp lEnv rEx
@@ -168,15 +178,24 @@ evalExp env e = case e of
       Left e -> throw e -- throw up the stack (IEVarNotFound)
       Right table -> do
         let newEnv = env {tableState = table}
-
         return (pure newEnv)
+    
+            
+  NotEquality v1 v2 -> do
+    let currentTable = tableState env 
+    let newTable = notEquality currentTable v1 v2
+    case newTable of
+      Left e -> throw e -- throw up the stack (IEVarNotFound)
+      Right table -> do
+        let newEnv = env {tableState = table}
+        return (pure newEnv)    
     
   Lookup t vs -> do
     let res = lookupTableData t (storedTables env)
     case res of
       Left e -> throw e -- rethrow up stack
       Right dat -> do 
-        let res' = makeTable vs dat
+        let res' = makeTable t vs dat
         case res' of
           Left e -> throw e -- rethrow up stack
           Right table -> do 
@@ -227,8 +246,17 @@ getVar var ids row
 
 equality :: RowTable -> Var -> Var -> InterReturn RowTable
 equality table v1 v2
-  | elem v1 ids && elem v2 ids = return ((Table ids [a | a <- rows, getVar v1 ids a == getVar v2 ids a]))
-  | otherwise                  = throw IEVarNotFound
+  | notElem v2 ids = throw $ IEVarNotFound v2
+  | notElem v1 ids = throw $ IEVarNotFound v1
+  | otherwise                  = return ((Table ids [a | a <- rows, getVar v1 ids a == getVar v2 ids a]))
+  where rows = tableData table
+        ids = columnVars table
+        
+notEquality :: RowTable -> Var -> Var -> InterReturn RowTable
+notEquality table v1 v2
+  | notElem v2 ids = throw $ IEVarNotFound v2
+  | notElem v1 ids = throw $ IEVarNotFound v1
+  | otherwise                  = return ((Table ids [a | a <- rows, getVar v1 ids a /= getVar v2 ids a]))
   where rows = tableData table
         ids = columnVars table
 
@@ -259,12 +287,12 @@ lookupTableData t ts = do
     Just (StoredTable _ dat) -> return dat
 
 -- Using a row table input and column data, make a table
-makeTable :: Vars -> TableData -> (Either InterException Table)
-makeTable vs []   = return $ Table vs []
-makeTable vs rows | length vs > length cols = throw IETooManyVars
-                  | length vs < length cols = throw IENotEnoughVars
-                  | otherwise               = return $ Table vs rows
-                  where cols = transpose rows
+makeTable :: String -> Vars -> TableData -> (Either InterException Table)
+makeTable _ vs []   = return $ Table vs []
+makeTable name vs rows | length vs > length cols = throw $ IETooManyVars name
+                       | length vs < length cols = throw $ IENotEnoughVars name
+                       | otherwise               = return $ Table vs rows
+                       where cols = transpose rows
 
 -----------------------------------------------------------------
 -- ExQual
@@ -276,8 +304,8 @@ addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
   Nothing ->  case (find (== v) (columnVars (tableState env))) of
                 Nothing -> let newEnv = env {boundVars = (v:(boundVars env))} in
                            addBoundVariables vs newEnv
-                Just _  -> throw IEVarExistsNotBound
-  Just _  ->  throw IEVarAlreadyBound 
+                Just _  -> throw $ IEVarExistsNotBound v
+  Just _  ->  throw $ IEVarAlreadyBound v
 
 -----------------------------------------------------------------
 -- Table Output 
@@ -395,17 +423,17 @@ allValsSame xs = all (== head xs) (tail xs)
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
-data InterException = IEImport InterException
+data InterException = IEImport InterException 
                     | IEQuery InterException
                     | IEUnequalLists
                     | IEReadError IOError
                     | IETableNotFound TableID
                     | IETableAlreadyDefined TableID
-                    | IETooManyVars
-                    | IENotEnoughVars
-                    | IEVarNotFound
-                    | IEVarAlreadyBound
-                    | IEVarExistsNotBound
+                    | IETooManyVars String
+                    | IENotEnoughVars String
+                    | IEVarNotFound Var
+                    | IEVarAlreadyBound Var
+                    | IEVarExistsNotBound Var
                     | IEVarNotInOutput Var
                     | IEOutputVarBound Var
                     | IEOutputVarNotExist Var
