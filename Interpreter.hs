@@ -13,27 +13,32 @@ import Data.Char (isSpace)
 -- Interpreter Types
 -----------------------------------------------------------------
 
+-- Environment 'stack' used during interpretation holding the
+-- tables available for lookup, the state of table currently in
+-- the stack. The variables bound in the scope.
 data Env  = Env 
           {
-            storedTables  :: [TableStore],
-            tableState  :: Table,
-            boundVars   :: Vars
+            storedTables :: [StoredTable],
+            tableState :: Table,
+            boundVars :: Vars
           }
           deriving Show
 
 -- Empty environment definition
 initEnv :: Env
-initEnv = Env [] [] []
+initEnv = Env [] (Table [] [[]]) []
 
 -- Raw table with identifier for lookups 
 data TableStore  = TableStore TableID Table deriving (Show, Eq)
+data StoredTable  = StoredTable 
+                  {
+                    storedTableID   :: TableID,
+                    storedTableData :: TableData 
+                  }
+                  deriving (Show, Eq)
 
--- Table held in column form (with column variables)
---type ColumnTable = [Column]
---data Column = Column { columnID :: Var, columnData :: [String] }
---            deriving (Show, Eq)
-
--- Table held in row form (with column variables)
+-- Table with data associated to column variables
+-- It is not enforced that data is stored in rows or columns
 type Row = [String]
 type TableData = [[String]]    
 data Table = Table { columnVars :: Vars, tableData :: TableData }
@@ -70,7 +75,7 @@ evalImports env (t:ts) = case t of
     case res of
       Left e -> throw e -- rethrow up stack
       Right dat -> do
-        let imported = TableStore i dat
+        let imported = StoredTable i dat
         let updatedEnv = env {storedTables = (imported:(storedTables env))}
         evalImports updatedEnv ts
 
@@ -92,7 +97,6 @@ evalStmt env s = case s of
     case res of 
       Left e -> throw e -- rethrow up stack
       Right env' -> do
-        let res' = makeOutputTable vs (tableState env')
         let res' = makeOutputTable vs (boundVars env') (tableState env')
         case res' of
           Left e -> throw e -- rethrow up stack
@@ -103,12 +107,14 @@ evalStmt env s = case s of
                 printTable table
                 return (Right env)
               Just i -> do
-                let store = TableStore i table -- TODO, throw store error if table exists
+                -- Store table for later use, not printing it
+                let store = StoredTable i table -- TODO, throw store error if table exists
                 let updatedEnv = env {storedTables = (store:(storedTables env))}
                 return (Right updatedEnv)
 
-  (Print t) -> return (Right env) --TODO
   (Print t) -> do
+    let res = lookupTableData t (storedTables env)
+    case res of 
       Left e -> throw e -- rethrow up stack
       Right table -> do
         printTable table
@@ -163,7 +169,6 @@ evalExp env e = case e of
           Left e -> throw e -- rethrow up stack
           Right newEnv -> return (Right newEnv)
 
-
 -----------------------------------------------------------------
 -- Conjunction
 -----------------------------------------------------------------
@@ -206,7 +211,6 @@ equality table v1 v2
 -- Lookup
 -----------------------------------------------------------------
 
-
 --Merges columns of a table in cases of repeated vars in columnVars
 mergeColumns :: Table -> Table
 mergeColumns t
@@ -219,6 +223,7 @@ mergeColumns t
         repeatsAreEqual (x:xs) (y:ys)
           | elem x xs = (y == ys !! fromJust (elemIndex x xs)) && repeatsAreEqual xs ys
           | otherwise = repeatsAreEqual xs ys
+
 
 -- Retrieve a given table from memory 
 lookupTableData :: Var -> [StoredTable] -> (Either InterException TableData) 
@@ -234,6 +239,7 @@ makeTable vs rows | length vs > length cols = throw IETooManyVars
                   | length vs < length cols = throw IENotEnoughVars
                   | otherwise               = return $ Table vs rows
                   where cols = transpose rows
+
 -----------------------------------------------------------------
 -- ExQual
 -----------------------------------------------------------------
@@ -241,43 +247,55 @@ makeTable vs rows | length vs > length cols = throw IETooManyVars
 addBoundVariables :: Vars -> Env -> (Either InterException Env)
 addBoundVariables []     env = Right (env)
 addBoundVariables (v:vs) env = case (find (== v) (boundVars env)) of
-  Nothing ->  case (find (== v) []) of -- FIXME Make check use column headings
+  Nothing ->  case (find (== v) (columnVars (tableState env))) of
                 Nothing -> let newEnv = env {boundVars = (v:(boundVars env))} in
                            addBoundVariables vs newEnv
                 Just _  -> throw IEVarExistsNotBound
   Just _  ->  throw IEVarAlreadyBound 
 
+-----------------------------------------------------------------
+-- Query Table Output 
+-----------------------------------------------------------------
+
+-- Gets the requested columns in the requested order, sorting rows lexicographically
+makeOutputTable :: Vars -> Vars -> Table -> (Either InterException TableData) 
+makeOutputTable outVars boundVars table = do
+  let notVarOutputs = [v | v <- outVars, not (v `elem` (columnVars table))]
+  case notVarOutputs of
+    (v:_) -> throw $ IEOutputVarNotExist v
+    [] -> do
+      -- All output variables in table
+      let boundOutputs = [v | v <- outVars, v `elem` boundVars]
+      case boundOutputs of
+        (v:_) -> throw $ IEOutputVarBound v
         [] -> do
           -- All output variables are not bound
           let freeVariables = filter (\x -> not (x `elem` boundVars)) (columnVars table)
           let missingVariables = [v | v <- freeVariables, not (v `elem` outVars)]
           case missingVariables of
+            (v:_) -> throw $ IEVarNotInOutput v
+            [] -> do
             -- All free variables are in output
             let columns  = transpose (tableData table) 
             let filtered = filter (\x -> fst x `elem` outVars) (zip (columnVars table) columns)
             let ordered  = sortOn (\x -> lookup (fst x) (zip outVars [0..])) filtered 
             let rows     = transpose (map snd ordered)
             let sorted   = sortOn (\r -> concat r) rows
+            return sorted                 
 
 -----------------------------------------------------------------
 -- Table Importer
 -----------------------------------------------------------------
 
 -- Imports a csv file into zipped columns
-importTable :: FilePath -> IO (Either InterException [[String]])
+importTable :: FilePath -> IO (Either InterException TableData)
 importTable f = do 
   res <- try $ readFile f :: IO (Either IOError String)
   case res of
     Left e -> throw (IEReadError e)
     Right dat -> do
       let tokenise = map parseCSVLine . lines
-      return (transpose' $ tokenise dat)
-
------------------------------------------------------------------
---Selecting vars from final table
------------------------------------------------------------------
-
--- TODO: Doesn't check boundness?
+      return (Right (tokenise dat))              
                  
 -----------------------------------------------------------------
 -- 'Simple' CSV Line Parser
@@ -289,12 +307,14 @@ importTable f = do
 -- are ignored. 
 
 
-csvSplit [] = []
-csvSplit xs = map trim (splitOnComma xs)
+parseCSVLine :: String -> [String]
+parseCSVLine [] = []
+parseCSVLine xs = map trim (splitOnComma xs)
 
 splitOnComma :: String -> [String]
 splitOnComma xs = splitOnComma' xs []
 
+-- Split on commas allowing escapes with backslashes (alternative to regex lookback)
 splitOnComma' :: String -> String -> [String]
 splitOnComma' []         buf = [reverse buf]
 splitOnComma' (x1:x2:xs) buf | x1 == ','  && x2 == ',' = reverse buf : [] : splitOnComma' xs  []
@@ -302,7 +322,7 @@ splitOnComma' (x1:x2:xs) buf | x1 /= '\\' && x2 == ',' = reverse (x1:buf) : spli
 splitOnComma' (x1:x2:xs) buf | x1 == '\\'              = splitOnComma' (xs) (x2:buf)
 splitOnComma' (x1:xs)    buf | x1 == ','               = reverse (buf) : splitOnComma' xs  []
 splitOnComma' (x1:xs)    buf | otherwise               = splitOnComma' (xs) (x1:buf)
-  
+
 trim :: String -> String
 trim = let f = reverse . dropWhile isSpace in f . f
 
@@ -344,11 +364,10 @@ allLensSame xss = allValsSame $ map length xss
 allValsSame :: Eq a =>[a] -> Bool
 allValsSame xs = all (== head xs) (tail xs)
 
-table2csv :: Table -> String
-table2csv xs = unlines ( map (intercalate ",") rows)
-             where rows = tableData xs
+table2csv :: TableData -> String
+table2csv xs = unlines ( map (intercalate ",") xs)
                    
-printTable :: Table -> IO ()
+printTable :: TableData -> IO ()
 printTable t = putStrLn $ table2csv t
 
 
@@ -365,6 +384,9 @@ data InterException = IEImport InterException
                     | IEVarNotFound
                     | IEVarAlreadyBound
                     | IEVarExistsNotBound
+                    | IEVarNotInOutput Var
+                    | IEOutputVarBound Var
+                    | IEOutputVarNotExist Var
                     | IEUnknown
                     deriving (Show)
 
