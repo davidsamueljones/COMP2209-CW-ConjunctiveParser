@@ -105,11 +105,12 @@ parseError tk = do
     (TAs)           -> makeParseError $ es ++ "Incorrect use of 'as' Correct use is FILEPATH as TABLE_NAME;" 
     (TPrint)        -> makeParseError $ es ++ "Incorrect use of 'print' Correct use is print TABLE_NAME " 
     (TTable t)      -> makeParseError $ es ++ "Incorrect placement of Table '" ++ t ++ "'" 
-    (TVar v)        -> makeParseError $ es ++ "Incorrect placement of Variable '" ++ v ++ "'" 
+    (TVar v)        -> makeParseError $ es ++ "Incorrect placement of Variable '" ++ v ++ "'"
+    (TEOF)          -> makeParseError $ es ++ "Reached EOF, is there a missing semicolon?" 
     (t)             -> makeParseError $ es ++ "Incorrect use of token '" ++ show t ++ "'"
 
 errorStart :: AlexPosn -> String
-errorStart (AlexPn _ l c) = "ERROR " ++ show (l, c) ++ ": "
+errorStart (AlexPn _ l c) = "Parse Error " ++ show (l, c) ++ ": "
 
 makeParseError = alexError
 
