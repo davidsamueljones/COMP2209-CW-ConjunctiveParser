@@ -243,6 +243,7 @@ lookupTableData t ts = do
 
 -- Using a row table input and column data, make a table
 makeTable :: Vars -> TableData -> (Either InterException Table)
+makeTable vs []   = return $ Table vs []
 makeTable vs rows | length vs > length cols = throw IETooManyVars
                   | length vs < length cols = throw IENotEnoughVars
                   | otherwise               = return $ Table vs rows
