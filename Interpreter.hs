@@ -16,7 +16,7 @@ import Data.Char (isSpace)
 data Env  = Env 
           {
             storedTables  :: [TableStore],
-            tableState  :: ColumnTable,
+            tableState  :: Table,
             boundVars   :: Vars
           }
           deriving Show
@@ -26,17 +26,17 @@ initEnv :: Env
 initEnv = Env [] [] []
 
 -- Raw table with identifier for lookups 
-type Table       = [[String]]
 data TableStore  = TableStore TableID Table deriving (Show, Eq)
 
 -- Table held in column form (with column variables)
-type ColumnTable = [Column]
-data Column = Column { columnID :: Var, columnData :: [String] }
-            deriving (Show, Eq)
+--type ColumnTable = [Column]
+--data Column = Column { columnID :: Var, columnData :: [String] }
+--            deriving (Show, Eq)
 
 -- Table held in row form (with column variables)
-type RowTable = [Row]     
-data Row = Row { columnIDs :: Vars, rowData :: [String] }
+type Row = [String]
+type TableData = [[String]]    
+data Table = Table { columnVars :: Vars, tableData :: TableData }
          deriving (Show, Eq)
 
 -----------------------------------------------------------------
@@ -168,39 +168,39 @@ evalExp env e = case e of
 -- Conjunction
 -----------------------------------------------------------------
 
-conjunction :: ColumnTable -> ColumnTable -> ColumnTable
-conjunction c1 c2 = removeDupCols $ row2col combined
-  where r1 = col2row c1
-        r2 = col2row c2
-        ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
+conjunction :: Table -> Table -> Table
+conjunction r1 r2 = removeDupCols combined
+  where ids1 = (columnVars r1)
+        ids2 = (columnVars r2)
+        ids = ids1 ++ ids2
         vars = getDupCols ids
-        combined = [(Row ids (rowData a ++ rowData b))| a <- r1, b <- r2, sameVars vars a b]
+        combined = (Table ids [a ++ b| a <- tableData r1, b <- tableData r2, sameVars vars ids1 ids2 a b])
                      
-combine :: RowTable -> RowTable -> RowTable
-combine r1 r2 = [(Row ids (a ++ b))| a <- map rowData r1, b <- map rowData r2]
-  where ids = (columnIDs $ head r1) ++ (columnIDs $ head r2)
+combine :: Table -> Table -> Table
+combine r1 r2 = (Table ids [a ++ b| a <- tableData r1, b <- tableData r2])
+  where ids = (columnVars r1) ++ (columnVars r2)
                         
-sameVars :: [Var] -> Row -> Row -> Bool
-sameVars vars row1 row2 = and [a | b <- vars, let a = sameVar b row1 row2]
+sameVars :: [Var] -> [String] -> [String] -> Row -> Row -> Bool
+sameVars vars ids1 ids2 row1 row2 = and [a | b <- vars, let a = sameVar b ids1 ids2 row1 row2]
             
-sameVar :: Var -> Row -> Row -> Bool
-sameVar var row1 row2 = (getVar var row1) == (getVar var row2)
+sameVar :: Var -> [String] -> [String] -> Row -> Row -> Bool
+sameVar var ids1 ids2 row1 row2 = (getVar var ids1 row1) == (getVar var ids2 row2)
 
-getVar :: Var -> Row -> Var
-getVar var (Row columnIDs rowData)
-  | elem var columnIDs = rowData !! fromJust (elemIndex var columnIDs)
-  | otherwise          = ""
+getVar :: Var -> [String] -> Row -> Var
+getVar var ids row
+  | elem var ids = row !! fromJust (elemIndex var ids)
+  | otherwise          = "" --TODO: Handle this case if required
 
 -----------------------------------------------------------------
 -- Equality
 -----------------------------------------------------------------
 
-equality :: ColumnTable -> Var -> Var -> Either InterException ColumnTable
+equality :: Table -> Var -> Var -> Either InterException Table
 equality table v1 v2
-  | elem v1 ids && elem v2 ids = Right (row2col [a | a <- rows, getVar v1 a == getVar v2 a])
+  | elem v1 ids && elem v2 ids = Right ((Table ids [a | a <- rows, getVar v1 ids a == getVar v2 ids a]))
   | otherwise                  = throw IEVarNotFound
-  where rows = col2row table
-        ids = map columnID table
+  where rows = tableData table
+        ids = columnVars table
 
 -----------------------------------------------------------------
 -- Lookup
@@ -211,22 +211,22 @@ lookupTableData x []                      = throw $ IETableNotFound x
 lookupTableData x ((TableStore y dat):ts) | x == y    = Right dat
 lookupTableData x (_:ts)                  | otherwise = lookupTableData x ts
 
-assignColumnVars :: Vars -> Table -> (Either InterException ColumnTable)
+assignColumnVars :: Vars -> Table -> (Either InterException Table)
 assignColumnVars = assignColumnVars' []
 
-assignColumnVars' :: ColumnTable -> Vars -> Table -> (Either InterException ColumnTable)
+assignColumnVars' :: Table -> Vars -> Table -> (Either InterException Table)
 assignColumnVars' os []     []     = Right os
 assignColumnVars' _  []     _      = throw IENotEnoughVars
 assignColumnVars' _  _      []     = throw IETooManyVars
-assignColumnVars' os (v:vs) (t:ts) = assignColumnVars' ((Column v t):os) vs ts
+--assignColumnVars' os (v:vs) (t:ts) = assignColumnVars' ((Column v t):os) vs ts
 
---Merges columns of a table in cases of repeated vars in columnIds)
-mergeColumns :: ColumnTable -> ColumnTable
-mergeColumns cs
-  | getDupCols ids == [] = cs
-  | otherwise            = removeDupCols $ row2col [row|row <- rs, repeatsAreEqual ids (rowData row)]
-  where ids = map columnID cs
-        rs = col2row cs
+--Merges columns of a table in cases of repeated vars in columnVars
+mergeColumns :: Table -> Table
+mergeColumns t
+  | getDupCols ids == [] = t
+  | otherwise            = removeDupCols (Table ids [row|row <- rs, repeatsAreEqual ids row])
+  where ids = columnVars t
+        rs = tableData t
         repeatsAreEqual :: [Var] -> [Var] -> Bool
         repeatsAreEqual [] [] = True
         repeatsAreEqual (x:xs) (y:ys)
@@ -266,23 +266,17 @@ importTable f = do
 
 -- TODO: Doesn't check boundness?
 -- Gets the requested columns in the requested order, rows sorted lexicographically
-makeOutputTable :: [Var] -> ColumnTable -> (Either InterException Table)
-makeOutputTable xs cls
-  | length columns == length xs = Right (map columnData columns)
-  | otherwise                   = throw IEVarNotFound
-  where ids = map columnID cls
-        columns = lexiSort [fst colbool| a <- xs, let colbool = getColumn a cls, snd colbool == True]
-        
-getColumn :: Var -> ColumnTable -> (Column,Bool) --Represents successful or not
-getColumn _ [] = ((Column [] []),False)
-getColumn x (c:cs)
-  | x == columnID c = (c,True)
-  | otherwise       = getColumn x cs
+--makeOutputTable :: [Var] -> ColumnTable -> (Either InterException Table)
+--makeOutputTable xs cls
+--  | length columns == length xs = Right (map columnData columns)
+--  | otherwise                   = throw IEVarNotFound
+--  where ids = map columnID cls
+--        columns = lexiSort [fst colbool| a <- xs, let colbool = getColumn a cls, snd colbool == True]
   
-lexiSort :: ColumnTable -> ColumnTable
-lexiSort a = row2col $ sorted
-           where rows = col2row a
-                 sorted = sortOn (\a -> concat $ rowData a) rows
+--lexiSort :: ColumnTable -> ColumnTable
+--lexiSort a = row2col $ sorted
+--           where rows = col2row a
+--                 sorted = sortOn (\a -> concat $ rowData a) rows
 
                  
                  
@@ -328,36 +322,18 @@ getDupCols (x:xs)
     | otherwise = getDupCols xs
 
 -- Remove columns with the same ID (var name)
-removeDupCols :: ColumnTable -> ColumnTable
-removeDupCols [] = []
-removeDupCols (x:xs)
-  | elem id idList = removeDupCols xs
-  | otherwise = [x] ++ removeDupCols xs
-  where idList = map columnID xs
-        id = columnID x
-
--- Convert a table in column form into row form 
-col2row :: ColumnTable -> RowTable
-col2row t = col2row' (map columnID t) (map columnData t)
-col2row' :: Vars -> Table -> RowTable
-col2row' _ [] = []
-col2row' ids columns 
-  | (length $ head columns) > 1 = [(Row ids row)] ++ col2row' ids tailColumns
-  | otherwise          = [(Row ids row)]
-  where row = map head columns
-        tailColumns = map tail columns
-
--- Convert a table in row form into column form 
-row2col :: RowTable -> ColumnTable
-row2col [] = []
-row2col (t:ts) = row2col' (columnIDs t) (map rowData (t:ts))
-row2col' :: Vars -> Table -> ColumnTable
-row2col' _ [] = []
-row2col' (x:xs) rows
-  | xs == []  = [(Column x column)]
-  | otherwise = [(Column x column)] ++ row2col' xs tailRows
-  where column = map head rows
-        tailRows = map tail rows
+removeDupCols :: Table -> Table
+removeDupCols rowTab = (Table newIds newRows)
+                     where ids = columnVars rowTab
+                           rows = tableData rowTab
+                           newRows = [b| a<- rows, let b = removeDupCols' ids a ]
+                           newIds = nub ids
+                           
+removeDupCols' :: [String] -> [String] -> [String]
+removeDupCols' [] [] = []
+removeDupCols' (i:is) (r:rs) 
+  | elem i is = removeDupCols' is rs
+  | otherwise = [r] ++ removeDupCols' is rs
 
 -- Transpose but fails if lists are not all equal length
 transpose' :: [[a]] -> Either InterException [[a]]
@@ -374,7 +350,7 @@ allValsSame xs = all (== head xs) (tail xs)
 
 table2csv :: Table -> String
 table2csv xs = unlines ( map (intercalate ",") rows)
-             where rows = transpose xs
+             where rows = tableData xs
                    
 printTable :: Table -> IO ()
 printTable t = putStrLn $ table2csv t
@@ -402,17 +378,6 @@ instance Exception InterException
 -- TODO!!!
 -----------------------------------------------------------------
 
-testColumn=  [(Column "x1" ["Pawel"]),(Column "x2" ["Sobocinski"])]
-testColumn1= [(Column "x3" ["Julian"]),(Column "x4" ["Rakthe"])]
-
-testColumn2= [(Column "x1" ["1","1"]),(Column "x2" ["3","3"])]
-testColumn3= [(Column "x3" ["3","3"]),(Column "x4" ["4","4"])]
-
-testColumn4= [(Column "x1" ["1","1"]),(Column "x2" ["3","2"])]
-testColumn5= [(Column "x2" ["3","3","2"]),(Column "x3" ["1","2","2"])]
-
-testColumn6= [(Column "x1" ["Sofiane","Tadic","Guido"]),(Column "x2" ["Boufal","Tadic","Carillo"])]
-testColumn7= [(Column "x2" ["Boufal","Carillo"]),(Column "x3" ["Maserati","Ferrari"])]
 
 -- http://matt.might.net/articles/cek-machines/
 -- http://matt.might.net/articles/cesk-machines/
