@@ -364,12 +364,15 @@ allLensSame xss = allValsSame $ map length xss
 allValsSame :: Eq a =>[a] -> Bool
 allValsSame xs = all (== head xs) (tail xs)
 
-table2csv :: TableData -> String
-table2csv xs = unlines ( map (intercalate ",") xs)
+table2csv :: TableData -> Maybe String
+table2csv [[]] = Nothing
+table2csv xs   = Just  $ unlines (map (intercalate ",") xs)
                    
 printTable :: TableData -> IO ()
-printTable t = putStrLn $ table2csv t
-
+printTable t = let res = table2csv t in
+  case res of
+    Nothing -> return ()
+    Just dat -> putStr dat
 
 -----------------------------------------------------------------
 -- Interpreter Exceptions
