@@ -3,7 +3,7 @@ module Interpreter (runInterpreter) where
 import Grammar           
 
 import Control.Exception (try)
-import Data.List         (transpose, find, sortOn, intercalate, elemIndex, nub)
+import Data.List         (transpose, find, sortOn, intercalate, elemIndex, nub, intersect)
 import Data.Maybe        (fromJust)
 import Data.Char         (isSpace)
 
@@ -117,7 +117,7 @@ evalStmt env s = case s of
     case res of 
       Left e -> throwIO (IEStmt e) -- rethrow up stack
       Right env' -> do
-        let res' = makeOutputTable vs (boundVars env') (tableState env')
+        let res' = mkOutputTable vs (boundVars env') (tableState env')
         case res' of
           Left e -> throwIO (IEStmt e) -- rethrow up stack
           Right table -> do
@@ -349,6 +349,29 @@ makeOutputTable outVars boundVars table = do
             let sorted   = sortOn (\r -> concat r) rows
             return sorted                 
 
+mkOutputTable :: Vars -> Vars -> RowTable -> (InterReturn TableData) 
+mkOutputTable outVars boundVars (Table columnVars tableData)
+  | boundOverlap /= []                            = throw $ IEOutputVarBound $ head boundOverlap
+  | outNotInCol /= []                             = throw $ IEOutputVarNotExist $ head outNotInCol
+  | freeNotInOut /= []                            = throw $ IEVarNotInOutput $ head freeNotInOut
+  | otherwise                                     = return $ sortOn (\r -> concat r) notSortedOutput
+  where boundOverlap = intersect outVars boundVars
+        outNotInCol = [a | a<- outVars, notElem a columnVars]
+        freeNotInOut = [a | a<- columnVars, notElem a boundVars, notElem a outVars]
+        columns = transpose tableData
+        notSortedOutput = transpose [col | v <- outVars, let col = getColumn v columnVars columns]
+        
+        getColumn :: Var -> Vars -> TableData -> Column
+        --getColumn _ [] [] = []
+        getColumn var (c:cs) (t:ts)
+          | var == c  = t
+          | otherwise = getColumn var cs ts
+
+        
+allMemberOf :: Eq a => [a] -> [a] -> Bool
+allMemberOf l1 l2 = foldr (&&) True memTab
+  where memTab = [elem a l2 | a<-l1]
+            
 -- Format table as a csv string
 table2csv :: TableData -> Maybe String
 table2csv [[]] = Nothing
