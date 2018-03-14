@@ -222,8 +222,6 @@ alexMonadScanAll = do
   -- Start loop 
   loop []
 
-
--- TODO: Can we redirect everything but AlexError to the original generation?
 -- Custom monad scan to make use of improved error handling
 alexMonadScan' = do
   inp <- alexGetInput
