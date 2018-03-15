@@ -244,12 +244,13 @@ alexError' t m = do
   sc <- alexGetStartCode
   us <- alexGetUserState
   case t of
-    LECommentEOF -> alexError $ "Lexing Error: Comment not terminated before EOF"
-    LEStringEOF -> alexError $ "Lexing Error: String not terminated before EOF"
-    LENotToken  -> alexError $ "Lexing Error: Unrecognised token at " ++ readAlexPos p
+    LECommentEOF -> alexError $ "Lexing Error : Multi-line comment not terminated before EOF (Depth " 
+      ++ (show (lexerCommentDepth us)) ++ ")"
+    LEStringEOF -> alexError $ "Lexing Error : String not terminated before EOF"
+    LENotToken  -> alexError $ "Lexing Error " ++ readAlexPos p ++ ": Unrecognised token" 
 
 readAlexPos :: AlexPosn -> String
-readAlexPos (AlexPn a l c) = (show l) ++ ":" ++ (show c)
+readAlexPos (AlexPn a l c) = show (l, c)
 
 -----------------------------------------------------------------
 -- Lexer Datatypes
