@@ -9,7 +9,6 @@ Grammar.hs : Grammar.y
 
 Main : Main.hs Tokens.hs Grammar.hs 
 	ghc -o myinterpreter Main.hs
-	./myinterpreter
 
 clean:
 	rm -f *.hi *.o
