@@ -422,6 +422,7 @@ allLensSame xss = allValsSame $ map length xss
 
 -- True if all values in list are equal 
 allValsSame :: Eq a =>[a] -> Bool
+allValsSame [] = True
 allValsSame xs = all (== head xs) (tail xs)
 
 -----------------------------------------------------------------
