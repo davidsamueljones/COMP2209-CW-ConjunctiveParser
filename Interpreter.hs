@@ -436,13 +436,12 @@ applyEqualities t ((NotEquality v1 v2):es) = applyEqualities' (equality t v1 v2)
 
 applyEqualities' :: InterReturn Table -> [Exp] -> InterReturn Table
 applyEqualities' e@(Left _)  _  = e
-applyEqualities' (Right t)   es = applyEqualities t es   
+applyEqualities' (Right t)   es = applyEqualities t es
         
 removeColumns :: [Var] -> RowTable -> RowTable
 removeColumns vs t = Table keptCols (transpose $ map snd dat)
-  where keptCols = filter (\x -> not (x elem vs)) (columnVars t)
-        dat = filter (\x -> fst x elem keptCols) (zip (columnVars t) (transpose $ tableData t))
-        
+  where keptCols = filter (\x -> not (x `elem` vs)) (columnVars t)
+        dat = filter (\x -> fst x `elem` keptCols) (zip (columnVars t) (transpose $ tableData t))
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
