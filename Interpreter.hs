@@ -116,24 +116,30 @@ evalStmt env s = case s of
     case res of 
       Left e -> throwIO (IEQuery e) -- rethrow up stack
       Right env' -> do
-        let res' = makeOutputTable vs (boundVars env') (tableState env')
-        case res' of
+        let currentTable = tableState env'
+        let eqlList = getFreeEqualities (e,pos) []
+        let newTable =  applyEqualities currentTable eqlList
+        case newTable of
           Left e -> throwIO (IEQuery e) -- rethrow up stack
-          Right table -> do
-            case store of
-              Nothing -> do
-                -- Print table but do not store it for later use
-                printTable table
-                return (pure env)
-              Just i -> do 
-                -- Store table for later use, not printing it
-                let findVar = find (\x -> storedTableID x == i) (storedTables env)
-                case findVar of
-                  Just _ -> throwIO $ (IEQuery $ IETableAlreadyDefined i)
+          Right nTab -> do
+            let env'' = env {tableState = nTab}
+            let res' = makeOutputTable vs (boundVars env') (tableState env')
+            case res' of
+              Left e -> throwIO (IEQuery e) -- rethrow up stack
+              Right table -> do
+                case store of
                   Nothing -> do
-                    let store = StoredTable i table
-                    let updatedEnv = env {storedTables = (store:(storedTables env))}
-                    return (pure updatedEnv)
+                    -- Print table but do not store it for later us                      printTable table
+                    return (pure env)
+                  Just i -> do 
+                    -- Store table for later use, not printing it
+                    let findVar = find (\x -> storedTableID x == i) (storedTables env)
+                    case findVar of
+                      Just _ -> throwIO $ (IEQuery $ IETableAlreadyDefined i)
+                      Nothing -> do
+                        let store = StoredTable i table
+                        let updatedEnv = env {storedTables = (store:(storedTables env))}
+                        return (pure updatedEnv)
 
   (PrintTable t) -> do
     let res = lookupTableData t (storedTables env)
@@ -157,48 +163,17 @@ evalExp env e = case e of
     case lRes of 
       Left e -> throwIO (IEExp e lPos) -- rethrow up stack
       Right lEnv -> do
-        case rExp of     
-          -- Special conjunction cases
-          (Equality v1 v2) -> do 
-            rRes <- evalExp lEnv (Equality v1 v2)
-            case rRes of 
-              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
-              Right rEnv -> do
-                return (pure rEnv)  
-          (NotEquality v1 v2) -> do 
-            rRes <- evalExp lEnv (NotEquality v1 v2)
-            case rRes of 
-              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
-              Right rEnv -> do
-                return (pure rEnv)                  
-          -- Normal conjunction
-          rEx -> do
-            rRes <- evalExp lEnv rEx
-            case rRes of 
-              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
-              Right rEnv -> do
-                let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
-                let newEnv = rEnv {tableState = joinedTable} 
-                return (pure newEnv)
+        rRes <- evalExp lEnv rExp
+        case rRes of 
+          Left e -> throwIO (IEExp e rPos) -- rethrow up stack
+          Right rEnv -> do
+            let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
+            let newEnv = rEnv {tableState = joinedTable} 
+            return (pure newEnv)
             
-  Equality v1 v2 -> do
-    let currentTable = tableState env 
-    let newTable = equality currentTable v1 v2
-    case newTable of
-      Left e -> throwIO e -- throw up the stack (IEVarNotFound)
-      Right table -> do
-        let newEnv = env {tableState = table}
-        return (pure newEnv)
-    
+  Equality v1 v2 -> return (Right env)
             
-  NotEquality v1 v2 -> do
-    let currentTable = tableState env 
-    let newTable = notEquality currentTable v1 v2
-    case newTable of
-      Left e -> throwIO e -- throw up the stack (IEVarNotFound)
-      Right table -> do
-        let newEnv = env {tableState = table}
-        return (pure newEnv)    
+  NotEquality v1 v2 -> return (Right env)    
     
   Lookup t vs -> do
     let res = lookupTableData t (storedTables env)
@@ -214,6 +189,7 @@ evalExp env e = case e of
             return (pure newEnv)
 
   ExQual vs (exp, pos) -> do
+    let eqls = getFreeEqualities (exp,pos) (boundVars env)
     let res = addBoundVariables vs env
     case res of
       Left e -> throwIO (IEExp e pos) -- rethrow up stack
@@ -221,7 +197,14 @@ evalExp env e = case e of
         res' <- evalExp envWithBounds exp
         case res' of
           Left e -> throwIO e -- rethrow up stack
-          Right newEnv -> return (pure newEnv)
+          Right newEnv -> do
+            let newTab = applyEqualities (tableState newEnv) eqls --APPLY EQUALITIES
+            case newTab of
+              Left e -> throwIO e
+              Right tab -> do
+                let finalTab = removeColumns (boundVars newEnv) tab
+                let newEnv' = newEnv {tableState = finalTab}
+                return (pure newEnv')
 
 -----------------------------------------------------------------
 -- Conjunction
@@ -253,6 +236,20 @@ getVar var ids row
 -----------------------------------------------------------------
 -- Equality
 -----------------------------------------------------------------
+
+getFreeEqualities :: PExp -> [Var] -> [Exp]
+getFreeEqualities (Conjunction e1 e2, _) bVars = getFreeEqualities e1 bVars ++ getFreeEqualities e2 bVars
+getFreeEqualities (Equality a b, _) bVars
+  | elem a bVars || elem b bVars = []
+  | otherwise = [(Equality a b)]
+getFreeEqualities (ExQual bV e1, _) bVars = getFreeEqualities e1 (bVars ++ bV)
+getFreeEqualities _ _ = []
+
+--getFreeNotEqualities :: PExp -> [Exp]
+--getFreeNotEqualities (Conjunction e1 e2, _) = getFreeEqualities e1 ++ getFreeEqualities e2
+--getFreeNotEqualities (NotEquality a b, _) = [(NotEquality a b)]
+--getFreeNotEqualities (ExQual _ _, _) = []
+--getFreeEqualities _ = []
 
 equality :: RowTable -> Var -> Var -> InterReturn RowTable
 equality table v1 v2
@@ -425,6 +422,27 @@ allValsSame :: Eq a =>[a] -> Bool
 allValsSame [] = True
 allValsSame xs = all (== head xs) (tail xs)
 
+--applyEqualities :: Table -> [Exp] -> InterReturn Table
+--applyEqualities t [] = Right t
+--applyEqualities t ((Equality v1 v2):es) = equality t v1 v2
+--  where equality' :: InterReturn Table -> Var -> Var -> InterReturn Table
+--        equality' (Left e) _ _ = (Left e)
+--        equality' (Right t) v1 v2 = (Right (equality v1 v2))
+   
+applyEqualities :: Table -> [Exp] -> InterReturn Table
+applyEqualities t [] = Right t
+applyEqualities t ((Equality v1 v2):es)    = applyEqualities' (equality t v1 v2) es 
+applyEqualities t ((NotEquality v1 v2):es) = applyEqualities' (equality t v1 v2) es
+
+applyEqualities' :: InterReturn Table -> [Exp] -> InterReturn Table
+applyEqualities' e@(Left _)  _  = e
+applyEqualities' (Right t)   es = applyEqualities t es   
+        
+removeColumns :: [Var] -> RowTable -> RowTable
+removeColumns vs t = Table keptCols (transpose $ map snd dat)
+  where keptCols = filter (\x -> not (x elem vs)) (columnVars t)
+        dat = filter (\x -> fst x elem keptCols) (zip (columnVars t) (transpose $ tableData t))
+        
 -----------------------------------------------------------------
 -- Interpreter Exceptions
 -----------------------------------------------------------------
