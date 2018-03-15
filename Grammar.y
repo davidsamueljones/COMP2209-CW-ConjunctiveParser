@@ -40,12 +40,12 @@ import Tokens
 Prog     : Imports Stmts                        { Prog $1 $2 }
 
 -- Store imports as a list
-Imports  : Import ';' Imports                  { $1:$3 } 
+Imports  : Import EOL Imports                  { $1:$3 } 
          | {- empty -}                         { [] }
 Import   : import STRING as TABLE              { (Import (tkSVal $2) (tkSVal $4)       , getPos $1) }
 
 -- Store statements as a list
-Stmts    : Stmt ';' Stmts                      { $1:$3 }
+Stmts    : Stmt EOL Stmts                      { $1:$3 }
          | {- empty -}                         { [] }
 Stmt     : TABLE '::' Vars '<-' Exp            { (Query (Just (tkSVal $1)) (fst $3) $5 , getPos $1) }
          | Vars '<-' Exp                       { (Query Nothing (fst $1) $3            , getPos' $1 $2) }
@@ -65,6 +65,9 @@ Exp      : TABLE '(' Vars ')'                  { (Lookup (tkSVal $1) (fst $3)   
          | '$' Vars '.' Exp                    { (ExQual (fst $2) $4                   , getPos $1) }
          | Exp '^' Exp                         { (Conjunction $1 $3                    , snd $1) }
 
+-- Optional end of line character
+EOL      : ';'                                 { {- empty -} }
+         | {- empty -}                         { {- empty -} }
 
 {
 
@@ -106,7 +109,7 @@ parseError tk = do
     (TPrint)        -> makeParseError $ es ++ "Incorrect use of 'print' Correct use is print TABLE_NAME " 
     (TTable t)      -> makeParseError $ es ++ "Incorrect placement of Table '" ++ t ++ "'" 
     (TVar v)        -> makeParseError $ es ++ "Incorrect placement of Variable '" ++ v ++ "'"
-    (TEOF)          -> makeParseError $ es ++ "Reached EOF, is there a missing semicolon?" 
+    (TEOF)          -> makeParseError $ es ++ "Reached EOF whilst attempting to parse" 
     (t)             -> makeParseError $ es ++ "Incorrect use of token '" ++ show t ++ "'"
 
 errorStart :: AlexPosn -> String
