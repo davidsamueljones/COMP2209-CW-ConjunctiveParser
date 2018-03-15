@@ -242,6 +242,9 @@ getFreeEqualities (Conjunction e1 e2, _) bVars = getFreeEqualities e1 bVars ++ g
 getFreeEqualities (Equality a b, _) bVars
   | elem a bVars || elem b bVars = []
   | otherwise = [(Equality a b)]
+getFreeEqualities (NotEquality a b, _) bVars
+  | elem a bVars || elem b bVars = []
+  | otherwise = [(NotEquality a b)]
 getFreeEqualities (ExQual bV e1, _) bVars = getFreeEqualities e1 (bVars ++ bV)
 getFreeEqualities _ _ = []
 
@@ -432,7 +435,7 @@ allValsSame xs = all (== head xs) (tail xs)
 applyEqualities :: Table -> [Exp] -> InterReturn Table
 applyEqualities t [] = Right t
 applyEqualities t ((Equality v1 v2):es)    = applyEqualities' (equality t v1 v2) es 
-applyEqualities t ((NotEquality v1 v2):es) = applyEqualities' (equality t v1 v2) es
+applyEqualities t ((NotEquality v1 v2):es) = applyEqualities' (notEquality t v1 v2) es
 
 applyEqualities' :: InterReturn Table -> [Exp] -> InterReturn Table
 applyEqualities' e@(Left _)  _  = e
