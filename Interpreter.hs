@@ -6,6 +6,7 @@ import Control.Exception (try)
 import Data.List         (transpose, find, sortOn, intercalate, elemIndex, nub, intersect)
 import Data.Maybe        (fromJust)
 import Data.Char         (isSpace)
+import System.IO         (hPutStrLn, stderr)
 
 -----------------------------------------------------------------
 -- Interpreter Types
@@ -455,7 +456,7 @@ throwIO :: InterException -> IO (Either InterException b)
 throwIO x = return $ Left x
 
 printExStack :: InterException -> IO ()
-printExStack e = putStrLn $ getExStackStr e
+printExStack e = do hPutStrLn stderr $ '\n' : getExStackStr e ++ "\n"
 
 getExStackStr :: InterException -> String
 getExStackStr e = "Error during interpretation:\n  " ++ getExStackStr' e 4
