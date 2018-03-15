@@ -156,7 +156,35 @@ evalStmt env s = case s of
 -- Process expression, updating environment respectively
 evalExp :: Env -> Exp -> IO (InterReturn Env) 
 evalExp env e = case e of
+            
+  Conjunction ((Equality _ _) , lPos) (rExp, rPos) -> do
+    rRes <- evalExp env rExp
+    case rRes of 
+      Left e -> throwIO (IEExp e rPos) -- rethrow up stack
+      Right rEnv -> do
+        return (pure rEnv)
+        
+  Conjunction ((NotEquality _ _) , lPos) (rExp, rPos) -> do
+    rRes <- evalExp env rExp
+    case rRes of 
+      Left e -> throwIO (IEExp e rPos) -- rethrow up stack
+      Right rEnv -> do
+        return (pure rEnv)
 
+  Conjunction (lExp, lPos) ((Equality _ _) , rPos) -> do
+    lRes <- evalExp env lExp
+    case lRes of 
+      Left e -> throwIO (IEExp e lPos) -- rethrow up stack
+      Right lEnv -> do
+        return (pure lEnv) 
+
+  Conjunction (lExp, lPos) ((NotEquality _ _) , rPos) -> do
+    lRes <- evalExp env lExp
+    case lRes of 
+      Left e -> throwIO (IEExp e lPos) -- rethrow up stack
+      Right lEnv -> do
+        return (pure lEnv)         
+  
   Conjunction (lExp, lPos) (rExp, rPos) -> do
     lRes <- evalExp env lExp
     case lRes of 
