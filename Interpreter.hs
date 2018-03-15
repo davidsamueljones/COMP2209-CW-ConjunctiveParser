@@ -116,13 +116,12 @@ evalStmt env s = case s of
     case res of 
       Left e -> throwIO (IEQuery e) -- rethrow up stack
       Right env' -> do
-        let currentTable = tableState env'
         let eqlList = getFreeEqualities (e,pos) []
-        let resEqs =  applyEqualities currentTable eqlList
+        let resEqs =  applyEqualities (tableState env') eqlList
         case resEqs of
           Left e -> throwIO (IEQuery e) -- rethrow up stack
           Right table -> do
-            let res' = makeOutputTable vs (boundVars env') (tableState env')
+            let res' = makeOutputTable vs (boundVars env') table
             case res' of
               Left e -> throwIO (IEQuery e) -- rethrow up stack
               Right outTable -> do
