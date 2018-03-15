@@ -1,4 +1,4 @@
-module Interpreter (runInterpreter) where
+module Interpreter where
 
 import Grammar           
 
@@ -368,7 +368,7 @@ importTable f = do
       let table = tokenise dat
       let valid = allLensSame table
       case valid of
-        False -> throwIO (IEUnequalLists)
+        False -> throwIO (IEUnequalLists f)
         True -> return (pure (table))              
                  
 parseCSVLine :: String -> [String]
@@ -431,7 +431,7 @@ data InterException = IEImport InterException XY
                     | IEQuery InterException
                     | IEPrint InterException
                     | IEExp InterException XY 
-                    | IEUnequalLists
+                    | IEUnequalLists String
                     | IEReadError IOError
                     | IETableNotFound TableID
                     | IETableAlreadyDefined TableID
@@ -453,3 +453,37 @@ throw x = Left x
 -- Throw in IO 
 throwIO :: InterException -> IO (Either InterException b)
 throwIO x = return $ Left x
+
+printExStack :: InterException -> IO ()
+printExStack e = putStrLn $ getExStackStr e
+
+getExStackStr :: InterException -> String
+getExStackStr e = "Error during interpretation:\n  " ++ getExStackStr' e 4
+getExStackStr' (IEImport e           xy) i = makeExStackStr "In import at" xy i (getExStackStr' e (i+2))
+getExStackStr' (IEStmt   (IEQuery e) xy) i = makeExStackStr "In query at"  xy i (getExStackStr' e (i+2))
+getExStackStr' (IEStmt   (IEPrint e) xy) i = makeExStackStr "In print at"  xy i (getExStackStr' e (i+2))
+getExStackStr' (IEExp    (IEExp e _) _ ) i = (getExStackStr' e i)-- Ignore long stacks of expressions
+getExStackStr' (IEExp     e          xy) i = makeExStackStr "In expression at" xy i (getExStackStr' e (i+2))
+getExStackStr' e                         i = getExStr e
+makeExStackStr s xy i f = s ++ " " ++ (show xy) ++ "\n" ++ (replicate i ' ') ++ f
+
+getExStr :: InterException -> String
+getExStr (IEUnequalLists p)        = "Imported CSV '" ++ p ++ "' does not have the same number of rows in each column"
+getExStr (IEReadError e)           = "CSV Load Error: " ++ show e
+getExStr (IETableNotFound t)       = tableIDStr t ++ " has not been assigned"
+getExStr (IETableAlreadyDefined t) = tableIDStr t ++ " is already assigned"
+getExStr (IETooManyVars t)         = "Too many variables are assigned for " ++ tableIDStr t
+getExStr (IENotEnoughVars t)       = "Not enough variables are assigned for " ++ tableIDStr t
+getExStr (IEVarNotFound v)         = getVarStr v ++ " could not be found"
+getExStr (IEVarAlreadyBound v)     = getVarStr v ++ " is already bound"
+getExStr (IEVarExistsNotBound v)   = getVarStr v ++ " is already assigned and not bound"
+getExStr (IEVarNotInOutput v)      = getVarStr v ++ " is assigned but is not bound or in output"
+getExStr (IEOutputVarBound v)      = getVarStr v ++ " is bound but is in output"
+getExStr (IEOutputVarNotExist v)   = getVarStr v ++ " is not assigned but is in output"
+getExStr (IEUnknown)               = "Unknown Exception"
+
+getVarStr :: Var -> String
+getVarStr v = "Variable '" ++ v ++ "'"
+
+tableIDStr :: TableID -> String
+tableIDStr t = "Table '" ++ t ++ "'"

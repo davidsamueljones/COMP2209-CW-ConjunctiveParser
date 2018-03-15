@@ -236,7 +236,6 @@ alexMonadScan' = do
         alexSetInput inp'
         action (ignorePendingBytes inp) len
 
--- TODO: Actually improve error messages, currently just structure
 -- Custom error handling, displaying more specific error messages
 alexError' :: LexerErrorType -> String -> Alex a
 alexError' t m = do 
@@ -245,7 +244,7 @@ alexError' t m = do
   us <- alexGetUserState
   case t of
     LECommentEOF -> alexError $ "Lexing Error : Multi-line comment not terminated before EOF (Depth " 
-      ++ (show (lexerCommentDepth us)) ++ ")"
+        ++ (show (lexerCommentDepth us)) ++ ")"
     LEStringEOF -> alexError $ "Lexing Error : String not terminated before EOF"
     LENotToken  -> alexError $ "Lexing Error " ++ readAlexPos p ++ ": Unrecognised token" 
 
@@ -319,18 +318,3 @@ data LexerErrorType = LEStringEOF
 (?) False _ y = y
 
 }
-
--- Helpful Links (collation of random sites used):
--- https://www.haskell.org/alex/doc/html/wrappers.html
--- https://github.com/dagit/happy-plus-alex/tree/master/src
--- http://hackage.haskell.org/package/tamarin-prover-0.4.1.0/src/interactive-only-src/Lexer.x
--- https://github.com/simonmar/alex/blob/master/examples/haskell.x
--- https://github.com/alanz/Alex
--- https://leanpub.com/alexandhappy/read#leanpub-auto-monadic-parsers-and-lexers
--- https://github.com/jmoy/alexhappy/blob/master/startcode/Lexer.x
--- https://raw.githubusercontent.com/simonmar/alex/master/examples/tiger.x
--- http://lpaste.net/raw/119212
--- https://stackoverflow.com/questions/20315739/how-to-use-an-alex-monadic-lexer-with-happy
--- https://stackoverflow.com/questions/31996489/what-causes-happy-to-throw-a-parse-error
--- https://www.jyotirmoy.net/posts/2015-08-17-alex-happy-startcodes.html
-
