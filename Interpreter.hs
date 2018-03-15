@@ -152,72 +152,34 @@ evalStmt env s = case s of
 evalExp :: Env -> Exp -> IO (InterReturn Env) 
 evalExp env e = case e of
 
---Cases where Equality or NotEquality are on the left of conjunction
-  Conjunction ((Equality v1 v2), lPos) (rExp, rPos) -> do
-    rRes <- evalExp env rExp
-    case rRes of 
-      Left e -> throwIO (IEExp e rPos) 
-      Right rEnv -> do
-        let table = tableState rEnv
-        let newTable = equality table v1 v2
-        case newTable of
-          Left e -> throwIO e  -- throw up the stack (IEVarNotFound)
-          Right tab' -> do
-            let newEnv = env {tableState = tab'}
-            return (pure newEnv)
-   
-  Conjunction ((NotEquality v1 v2), lPos) (rExp, rPos) -> do
-    rRes <- evalExp env rExp
-    case rRes of 
-      Left e -> throwIO (IEExp e rPos) 
-      Right rEnv -> do
-        let table = tableState rEnv
-        let newTable = notEquality table v1 v2
-        case newTable of
-          Left e -> throwIO e  -- throw up the stack (IEVarNotFound)
-          Right tab' -> do
-            let newEnv = env {tableState = tab'}
-            return (pure newEnv)
-
---Cases where Equality or NotEquality are on the right of conjunction
-  Conjunction (lExp, lPos) ((Equality v1 v2), rPos) -> do
-    rRes <- evalExp env lExp
-    case rRes of 
-      Left e -> throwIO (IEExp e lPos) 
-      Right lEnv -> do
-        let table = tableState lEnv
-        let newTable = equality table v1 v2
-        case newTable of
-          Left e -> throwIO e  -- throw up the stack (IEVarNotFound)
-          Right tab' -> do
-            let newEnv = env {tableState = tab'}
-            return (pure newEnv)
-
-  Conjunction (lExp, lPos) ((NotEquality v1 v2), rPos) -> do
-    rRes <- evalExp env lExp
-    case rRes of 
-      Left e -> throwIO (IEExp e lPos) 
-      Right lEnv -> do
-        let table = tableState lEnv
-        let newTable = notEquality table v1 v2
-        case newTable of
-          Left e -> throwIO e  -- throw up the stack (IEVarNotFound)
-          Right tab' -> do
-            let newEnv = env {tableState = tab'}
-            return (pure newEnv)            
-
   Conjunction (lExp, lPos) (rExp, rPos) -> do
     lRes <- evalExp env lExp
     case lRes of 
       Left e -> throwIO (IEExp e lPos) -- rethrow up stack
       Right lEnv -> do
-        rRes <- evalExp lEnv rExp
-        case rRes of 
-          Left e -> throwIO (IEExp e rPos) -- rethrow up stack
-          Right rEnv -> do
-            let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
-            let newEnv = rEnv {tableState = joinedTable} 
-            return (pure newEnv)
+        case rExp of     
+          -- Special conjunction cases
+          (Equality v1 v2) -> do 
+            rRes <- evalExp lEnv (Equality v1 v2)
+            case rRes of 
+              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
+              Right rEnv -> do
+                return (pure rEnv)  
+          (NotEquality v1 v2) -> do 
+            rRes <- evalExp lEnv (NotEquality v1 v2)
+            case rRes of 
+              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
+              Right rEnv -> do
+                return (pure rEnv)                  
+          -- Normal conjunction
+          rEx -> do
+            rRes <- evalExp lEnv rEx
+            case rRes of 
+              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
+              Right rEnv -> do
+                let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
+                let newEnv = rEnv {tableState = joinedTable} 
+                return (pure newEnv)
             
   Equality v1 v2 -> do
     let currentTable = tableState env 
