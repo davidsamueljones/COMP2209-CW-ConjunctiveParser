@@ -118,18 +118,18 @@ evalStmt env s = case s of
       Right env' -> do
         let currentTable = tableState env'
         let eqlList = getFreeEqualities (e,pos) []
-        let newTable =  applyEqualities currentTable eqlList
-        case newTable of
+        let resEqs =  applyEqualities currentTable eqlList
+        case resEqs of
           Left e -> throwIO (IEQuery e) -- rethrow up stack
-          Right nTab -> do
-            let env'' = env {tableState = nTab}
+          Right table -> do
             let res' = makeOutputTable vs (boundVars env') (tableState env')
             case res' of
               Left e -> throwIO (IEQuery e) -- rethrow up stack
-              Right table -> do
+              Right outTable -> do
                 case store of
                   Nothing -> do
-                    -- Print table but do not store it for later us                      printTable table
+                    -- Print table but do not store it for later                      
+                    printTable outTable
                     return (pure env)
                   Just i -> do 
                     -- Store table for later use, not printing it
@@ -137,7 +137,7 @@ evalStmt env s = case s of
                     case findVar of
                       Just _ -> throwIO $ (IEQuery $ IETableAlreadyDefined i)
                       Nothing -> do
-                        let store = StoredTable i table
+                        let store = StoredTable i outTable
                         let updatedEnv = env {storedTables = (store:(storedTables env))}
                         return (pure updatedEnv)
 
