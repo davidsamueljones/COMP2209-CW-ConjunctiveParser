@@ -70,8 +70,6 @@ runInterpreter (Prog is stmts) = do
       case resStmts of
         Left e -> throwIO e
         Right _ -> return (Right "Interpretation Finished")
-      -- TODO : Error handling
-
 
 -- Process imports, placing updates in environment
 evalImports :: Env -> Imports -> IO (InterReturn Env)
@@ -115,11 +113,11 @@ evalStmt env s = case s of
   (Query store vs (e, pos)) -> do
     res <- evalExp env e
     case res of 
-      Left e -> throwIO e -- rethrow up stack
+      Left e -> throwIO (IEQuery e) -- rethrow up stack
       Right env' -> do
         let res' = makeOutputTable vs (boundVars env') (tableState env')
         case res' of
-          Left e -> throwIO e -- rethrow up stack
+          Left e -> throwIO (IEQuery e) -- rethrow up stack
           Right table -> do
             case store of
               Nothing -> do
@@ -130,7 +128,7 @@ evalStmt env s = case s of
                 -- Store table for later use, not printing it
                 let findVar = find (\x -> storedTableID x == i) (storedTables env)
                 case findVar of
-                  Just _ -> throwIO $ (IETableAlreadyDefined i)
+                  Just _ -> throwIO $ (IEQuery $ IETableAlreadyDefined i)
                   Nothing -> do
                     let store = StoredTable i table
                     let updatedEnv = env {storedTables = (store:(storedTables env))}
@@ -139,7 +137,7 @@ evalStmt env s = case s of
   (PrintTable t) -> do
     let res = lookupTableData t (storedTables env)
     case res of 
-      Left e -> throwIO e -- rethrow up stack
+      Left e -> throwIO (IEPrint e) -- rethrow up stack
       Right table -> do
         printTable table
         return (pure env)
@@ -156,28 +154,27 @@ evalExp env e = case e of
   Conjunction (lExp, lPos) (rExp, rPos) -> do
     lRes <- evalExp env lExp
     case lRes of 
-      Left e -> throwIO e -- rethrow up stack
+      Left e -> throwIO (IEExp e lPos) -- rethrow up stack
       Right lEnv -> do
-        case rExp of
-        
+        case rExp of     
+          -- Special conjunction cases
           (Equality v1 v2) -> do 
             rRes <- evalExp lEnv (Equality v1 v2)
             case rRes of 
-              Left e -> throwIO e -- rethrow up stack
+              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
               Right rEnv -> do
                 return (pure rEnv)  
-
           (NotEquality v1 v2) -> do 
             rRes <- evalExp lEnv (NotEquality v1 v2)
             case rRes of 
-              Left e -> throwIO e -- rethrow up stack
+              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
               Right rEnv -> do
                 return (pure rEnv)                  
-        
+          -- Normal conjunction
           rEx -> do
             rRes <- evalExp lEnv rEx
             case rRes of 
-              Left e -> throwIO e -- rethrow up stack
+              Left e -> throwIO (IEExp e rPos) -- rethrow up stack
               Right rEnv -> do
                 let joinedTable = conjunction (tableState lEnv) (tableState rEnv)
                 let newEnv = rEnv {tableState = joinedTable} 
@@ -218,7 +215,7 @@ evalExp env e = case e of
   ExQual vs (exp, pos) -> do
     let res = addBoundVariables vs env
     case res of
-      Left e -> throwIO e -- rethrow up stack
+      Left e -> throwIO (IEExp e pos) -- rethrow up stack
       Right envWithBounds -> do
         res' <- evalExp envWithBounds exp
         case res' of
@@ -431,6 +428,8 @@ allValsSame xs = all (== head xs) (tail xs)
 -----------------------------------------------------------------
 data InterException = IEImport InterException XY
                     | IEStmt InterException XY
+                    | IEQuery InterException
+                    | IEPrint InterException
                     | IEExp InterException XY 
                     | IEUnequalLists
                     | IEReadError IOError
@@ -451,5 +450,6 @@ data InterException = IEImport InterException XY
 -- for left assignment
 throw :: InterException -> Either InterException b
 throw x = Left x
+-- Throw in IO 
 throwIO :: InterException -> IO (Either InterException b)
 throwIO x = return $ Left x
